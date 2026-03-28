@@ -1240,11 +1240,40 @@ const Assessment = ({ mode, onComplete }) => {
         {domain===4 && <DomainRisk resp={resp.d4} set={(k,v)=>set(4,k,v)} color={cd.color} bg={cd.bg} mode={mode}/>}
 
         <div className="pt-4 pb-8 space-y-3">
-          {!complete(domain) && domain!==1 && (
-            <p className="text-center text-xs text-gray-400">
-              {cd.count - answered(domain)} more question{cd.count - answered(domain) !== 1 ? "s" : ""} remaining in this domain
-            </p>
+
+          {/* Incomplete prompt — shows exactly what is missing */}
+          {!complete(domain) && domain !== 1 && (
+            <div className="rounded-2xl p-4" style={{background:"#FEF2F2", border:"1.5px solid #FECACA"}}>
+              <p className="text-xs font-black text-red-600 mb-2">
+                ⚠️ {cd.count - answered(domain)} question{cd.count - answered(domain) !== 1 ? "s" : ""} still unanswered in {cd.name}
+              </p>
+              <p className="text-xs text-red-500">Scroll up to find and answer all questions — they are highlighted with an empty border. All questions must be answered before you can continue.</p>
+            </div>
           )}
+
+          {/* Show all-domain summary when on last domain and something is incomplete */}
+          {domain === 4 && !allDone && (
+            <div className="rounded-2xl p-4" style={{background:"#FFF7ED", border:"1.5px solid #FED7AA"}}>
+              <p className="text-xs font-black text-orange-700 mb-2">📋 Assessment progress</p>
+              {DOMAIN_META.map(m => (
+                <div key={m.id} className="flex items-center justify-between py-1">
+                  <span className="text-xs font-semibold" style={{color: complete(m.id) ? "#10B981" : m.color}}>
+                    {complete(m.id) ? "✓" : "○"} {m.name}
+                  </span>
+                  {!complete(m.id) && m.id !== 1 && (
+                    <button onClick={() => { setDomain(m.id); scrollRef.current?.scrollTo(0,0); }}
+                      className="text-xs px-3 py-1 rounded-lg font-bold text-white"
+                      style={{background: m.color}}>
+                      Go to {m.code} →
+                    </button>
+                  )}
+                  {complete(m.id) && <span className="text-xs text-green-500">Complete</span>}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Next / Complete button — only shown when current domain is complete */}
           {complete(domain) && (
             <button onClick={nextDomain}
               className="w-full py-4 rounded-2xl font-black text-white text-sm"
@@ -1847,12 +1876,16 @@ const DomainRisk = ({ resp, set, color, bg, mode }) => (
     <p className="text-xs font-black text-gray-500 uppercase tracking-wider px-1 mt-2">Part B — Alcohol Screen (AUDIT-C)</p>
     {AUDITC.map((item, i) => {
       const val = resp[`aud${i+1}`];
+      if (i > 0 && resp.aud1 === 0) return null;
       return (
         <div key={i} className="bg-white rounded-2xl border border-gray-200 p-4">
           <p className="text-sm text-gray-700 mb-2">{item.q}</p>
           <div className="space-y-1.5">
             {item.opts.map((opt, j) => (
-              <button key={j} onClick={() => set(`aud${i+1}`, j)}
+              <button key={j} onClick={() => {
+                set(`aud${i+1}`, j);
+                if (i === 0 && j === 0) { set('aud2', 0); set('aud3', 0); }
+              }}
                 className={cx("w-full text-left py-2 px-3 rounded-xl text-xs border-2 transition-all",
                   val===j ? "border-orange-500 bg-orange-50 text-orange-700 font-bold" : "border-gray-200 text-gray-600")}>
                 {opt}
@@ -1862,6 +1895,11 @@ const DomainRisk = ({ resp, set, color, bg, mode }) => (
         </div>
       );
     })}
+    {resp.aud1 === 0 && (
+      <div className="rounded-xl px-3 py-2 text-xs" style={{background:"#F0FDF4",border:"1px solid #86EFAC"}}>
+        ✓ No alcohol use reported — questions 2 and 3 are not required.
+      </div>
+    )}
 
     {/* SDQ-CP */}
     <p className="text-xs font-black text-gray-500 uppercase tracking-wider px-1 mt-2">Part C — Conduct Profile (SDQ-CP)</p>
