@@ -665,7 +665,25 @@ const SDQCP = [
   { q:"I take things that do not belong to me",           rev:false },
 ];
 
-// ─────────────── SCORING HELPERS ───────────────────────────────────────────
+// ── OPTION SHUFFLE ────────────────────────────────────────────────────────────
+// Deterministic per question ID — same question always shuffles same way,
+// but correct answer lands in a different position for each question.
+// Uses the question id as a seed so it is stable across renders.
+const shuffleOptions = (options, correctIdx, questionId) => {
+  // Simple seeded Fisher-Yates using question id
+  const seed = questionId * 2654435761;
+  const rng  = (n) => {
+    const x = Math.sin(seed + n) * 10000;
+    return x - Math.floor(x);
+  };
+  const arr  = options.map((opt, i) => ({ opt, origIdx: i }));
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(rng(i) * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  const newCorrectIdx = arr.findIndex(a => a.origIdx === correctIdx);
+  return { shuffled: arr.map(a => a.opt), newCorrectIdx };
+};
 
 const scoreBFI = (resp) => {
   // BFI-10 standard scoring (Rammstedt & John, 2007)
@@ -843,7 +861,111 @@ const SectionHead = ({ icon, title, color="#1A2E4A", badge }) => (
 // ─────────────── SCREENS ───────────────────────────────────────────────────
 
 // ════ WELCOME ════════════════════════════════════════════════════════════════
-const Welcome = ({ onSelf, onClinician }) => (
+// ════ TRANSLATIONS (EN / HI / MR) ════════════════════════════════════════════
+const VT = {
+  en: {
+    langTitle:"Choose Language", langSub:"Select the language you are most comfortable with",
+    langEn:"English", langHi:"हिंदी", langMr:"मराठी",
+    regTitle:"Patient Registration", regSub:"CIBS-VALID · Fill your details before starting",
+    fileNoLabel:"Registration Number (FileNo) ★",
+    fileNoPrefilled:"Pre-filled by CIBS — links your records across all tests",
+    fileNoHint:"Leave blank — a unique number will be generated automatically",
+    nameLabel:"Full Name (optional — leave blank to stay anonymous)",
+    dobLabel:"Date of Birth ★", ageStr:"Age", yearsStr:"years",
+    genderLabel:"Gender ★",
+    genders:["Male","Female","Other","NSD"],
+    mobileLabel:"Mobile Number (10 digits)",
+    emailLabel:"Email (optional)",
+    eduLabel:"Highest Education",
+    edu:["No formal education","Primary (Std 1–5)","Secondary (Std 6–10)","Higher Secondary (Std 11–12)","Graduate","Post-Graduate","Doctorate","Other"],
+    occLabel:"Occupation (optional)",
+    refLabel:"How did you come here?",
+    ref:["OPD / Walk-in","Referred by physician","Referred by school","Self-referred","Research study","Community screening","Other"],
+    assessorLabel:"Assessor / Clinician Name",
+    notesLabel:"Chief Complaint / Notes (optional)",
+    uidLabel:"Anonymous UID", fileNoDisplay:"FileNo",
+    privacyNote:"Your name and contact are used only to generate your UID. Only the anonymous UID is stored in research records.",
+    proceedBtn:"Proceed to Assessment →",
+    selfBtn:"Self-Assessment", selfSub:"For literate, tech-savvy individuals",
+    clinBtn:"Clinician-Assisted Mode", clinSub:"Examiner reads aloud · Any literacy level",
+  },
+  hi: {
+    langTitle:"भाषा चुनें", langSub:"वह भाषा चुनें जिसमें आप सबसे सहज हों",
+    langEn:"English", langHi:"हिंदी", langMr:"मराठी",
+    regTitle:"रोगी पंजीकरण", regSub:"CIBS-VALID · शुरू करने से पहले अपना विवरण भरें",
+    fileNoLabel:"पंजीकरण संख्या (FileNo) ★",
+    fileNoPrefilled:"CIBS द्वारा पूर्व-भरा गया — सभी परीक्षणों में आपके रिकॉर्ड जोड़ता है",
+    fileNoHint:"खाली छोड़ें — एक अद्वितीय संख्या स्वतः बनाई जाएगी",
+    nameLabel:"पूरा नाम (वैकल्पिक — गुमनाम रहने के लिए खाली छोड़ें)",
+    dobLabel:"जन्म तिथि ★", ageStr:"आयु", yearsStr:"वर्ष",
+    genderLabel:"लिंग ★",
+    genders:["पुरुष","महिला","अन्य","बताना नहीं"],
+    mobileLabel:"मोबाइल नंबर (10 अंक)",
+    emailLabel:"ईमेल (वैकल्पिक)",
+    eduLabel:"उच्चतम शिक्षा",
+    edu:["कोई औपचारिक शिक्षा नहीं","प्राथमिक (कक्षा 1–5)","माध्यमिक (कक्षा 6–10)","उच्च माध्यमिक (कक्षा 11–12)","स्नातक","स्नातकोत्तर","डॉक्टरेट","अन्य"],
+    occLabel:"व्यवसाय (वैकल्पिक)",
+    refLabel:"आप यहाँ कैसे आए?",
+    ref:["OPD / Walk-in","चिकित्सक द्वारा रेफर","विद्यालय द्वारा रेफर","स्वयं रेफर","शोध अध्ययन","सामुदायिक जांच","अन्य"],
+    assessorLabel:"परीक्षक / चिकित्सक का नाम",
+    notesLabel:"मुख्य शिकायत / नोट्स (वैकल्पिक)",
+    uidLabel:"अनाम UID", fileNoDisplay:"FileNo",
+    privacyNote:"आपका नाम और संपर्क केवल UID बनाने के लिए उपयोग किए जाते हैं। शोध रिकॉर्ड में केवल अनाम UID संग्रहीत है।",
+    proceedBtn:"मूल्यांकन शुरू करें →",
+    selfBtn:"स्व-मूल्यांकन", selfSub:"साक्षर, तकनीक-जानकार व्यक्तियों के लिए",
+    clinBtn:"चिकित्सक-सहायता मोड", clinSub:"परीक्षक जोर से पढ़ता है · कोई भी साक्षरता स्तर",
+  },
+  mr: {
+    langTitle:"भाषा निवडा", langSub:"तुम्हाला सर्वात सोयीस्कर असलेली भाषा निवडा",
+    langEn:"English", langHi:"हिंदी", langMr:"मराठी",
+    regTitle:"रुग्ण नोंदणी", regSub:"CIBS-VALID · सुरू करण्यापूर्वी आपला तपशील भरा",
+    fileNoLabel:"नोंदणी क्रमांक (FileNo) ★",
+    fileNoPrefilled:"CIBS द्वारे पूर्व-भरलेले — सर्व चाचण्यांमध्ये तुमचे रेकॉर्ड जोडते",
+    fileNoHint:"रिकामे सोडा — एक अद्वितीय क्रमांक आपोआप तयार होईल",
+    nameLabel:"पूर्ण नाव (पर्यायी — अज्ञात राहण्यासाठी रिकामे सोडा)",
+    dobLabel:"जन्मतारीख ★", ageStr:"वय", yearsStr:"वर्षे",
+    genderLabel:"लिंग ★",
+    genders:["पुरुष","स्त्री","इतर","सांगायचे नाही"],
+    mobileLabel:"मोबाइल नंबर (10 अंक)",
+    emailLabel:"ईमेल (पर्यायी)",
+    eduLabel:"सर्वोच्च शिक्षण",
+    edu:["कोणतेही औपचारिक शिक्षण नाही","प्राथमिक (इयत्ता 1–5)","माध्यमिक (इयत्ता 6–10)","उच्च माध्यमिक (इयत्ता 11–12)","पदवी","पदव्युत्तर","डॉक्टरेट","इतर"],
+    occLabel:"व्यवसाय (पर्यायी)",
+    refLabel:"तुम्ही येथे कसे आलात?",
+    ref:["OPD / Walk-in","वैद्यांनी संदर्भित","शाळेने संदर्भित","स्वतः संदर्भित","संशोधन अभ्यास","सामुदायिक तपासणी","इतर"],
+    assessorLabel:"परीक्षक / वैद्यांचे नाव",
+    notesLabel:"मुख्य तक्रार / नोट्स (पर्यायी)",
+    uidLabel:"अनामिक UID", fileNoDisplay:"FileNo",
+    privacyNote:"तुमचे नाव आणि संपर्क फक्त UID तयार करण्यासाठी वापरले जातात. संशोधन नोंदींमध्ये फक्त अनामिक UID साठवला जातो.",
+    proceedBtn:"मूल्यांकन सुरू करा →",
+    selfBtn:"स्व-मूल्यांकन", selfSub:"साक्षर, तंत्रज्ञान-जाणकार व्यक्तींसाठी",
+    clinBtn:"वैद्य-सहाय्यित मोड", clinSub:"परीक्षक मोठ्याने वाचतो · कोणतीही साक्षरता पातळी",
+  },
+};
+
+// ════ LANGUAGE SCREEN ════════════════════════════════════════════════════════
+const LanguageScreen = ({ onSelect }) => (
+  <div className="min-h-screen flex flex-col items-center justify-center p-6"
+    style={{background:"linear-gradient(160deg,#0F1E30,#1A2E4A)"}}>
+    <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl mb-6"
+      style={{background:"rgba(139,92,246,0.2)",border:"1px solid rgba(139,92,246,0.4)"}}>📋</div>
+    <h1 className="text-2xl font-black text-white mb-1">CIBS-VALID</h1>
+    <p className="text-purple-400 text-xs mb-8 text-center">Central Institute of Behavioural Sciences · Nagpur</p>
+    <div className="w-full max-w-xs space-y-3">
+      {[["en","English","Continue in English"],["hi","हिंदी","हिंदी में जारी रखें"],["mr","मराठी","मराठीत सुरू ठेवा"]].map(([code,label,sub])=>(
+        <button key={code} onClick={()=>onSelect(code)}
+          className="w-full py-4 rounded-2xl font-black text-white text-base transition-all active:scale-97"
+          style={{background:"rgba(139,92,246,0.25)",border:"1.5px solid rgba(139,92,246,0.5)"}}>
+          {label}
+          <span className="block text-purple-300 text-xs font-normal mt-0.5">{sub}</span>
+        </button>
+      ))}
+    </div>
+  </div>
+);
+
+// ════ WELCOME SCREEN ════════════════════════════════════════════════════════
+const Welcome = ({ onSelf, onClinician })=> (
   <div className="min-h-screen flex flex-col" style={{
     background: "linear-gradient(160deg, #0F1E30 0%, #1A2E4A 50%, #0F1E30 100%)"
   }}>
@@ -1160,7 +1282,7 @@ const DOMAIN_META = [
   { id:1, code:"D1", name:"Cognition",   color:"#3B82F6", bg:"#EFF6FF", icon:"🧩", count:22 },
   { id:2, code:"D2", name:"Personality", color:"#8B5CF6", bg:"#F5F3FF", icon:"🪞", count:10 },
   { id:3, code:"D3", name:"Health",      color:"#10B981", bg:"#F0FDF4", icon:"💚", count:17 },
-  { id:4, code:"D4", name:"Risk",        color:"#EF4444", bg:"#FEF2F2", icon:"🛡", count:13 },
+  { id:4, code:"D4", name:"Risk",        color:"#EF4444", bg:"#FEF2F2", icon:"🛡", count:11 },
 ];
 
 // ════ ASSESSMENT CONTAINER ════════════════════════════════════════════════════
@@ -1170,12 +1292,39 @@ const Assessment = ({ mode, onComplete }) => {
   const scrollRef = useRef(null);
 
   const set = (d, k, v) => setResp(r => ({ ...r, [`d${d}`]: { ...r[`d${d}`], [k]: v } }));
-  const answered = (d) => d===1
-    ? Object.keys(resp.d1).filter(k=>!k.startsWith('_')).length
-    : Object.keys(resp[`d${d}`]).length;
-  const complete = (d) => d===1
-    ? resp.d1._done === 1
-    : Object.keys(resp[`d${d}`]).length >= DOMAIN_META[d-1].count;
+  const answered = (d) => {
+    if (d === 1) return Object.keys(resp.d1).filter(k=>!k.startsWith('_')).length;
+    if (d === 4) {
+      const r = resp.d4;
+      const audSkip = r.aud1 === 0;
+      const cssCount = Object.keys(r).filter(k=>k.startsWith('css')).length;
+      const audCount = audSkip ? (r.aud1 !== undefined ? 1 : 0) : Object.keys(r).filter(k=>k.startsWith('aud')).length;
+      const sdqCount = Object.keys(r).filter(k=>k.startsWith('sdq')).length;
+      return cssCount + audCount + sdqCount;
+    }
+    return Object.keys(resp[`d${d}`]).length;
+  };
+  const complete = (d) => {
+    if (d === 1) {
+      // Primary: CAT finished cleanly
+      if (resp.d1._done === 1) return true;
+      // Fallback: CAT has at least 6 answers (enough for scoring) and user is past D1
+      const catAnswers = Object.keys(resp.d1).filter(k => !k.startsWith('_')).length;
+      return catAnswers >= 6 && domain > 1;
+    }
+    if (d === 4) {
+      const r = resp.d4;
+      const cssCount = Object.keys(r).filter(k => k.startsWith('css')).length;
+      const sdqCount = Object.keys(r).filter(k => k.startsWith('sdq')).length;
+      const audNever = r.aud1 === 0; // "Never" — Q2+Q3 auto-skipped
+      const audCount = audNever
+        ? (r.aud1 !== undefined ? 1 : 0)
+        : Object.keys(r).filter(k => k.startsWith('aud')).length;
+      const required = 5 + (audNever ? 1 : 3) + 5;
+      return (cssCount + audCount + sdqCount) >= required;
+    }
+    return Object.keys(resp[`d${d}`]).length >= DOMAIN_META[d-1].count;
+  };
   const pct = () => {
     const total = DOMAIN_META.reduce((s,m)=>s+m.count,0);
     const done  = DOMAIN_META.reduce((s,m)=>s+answered(m.id),0);
@@ -1185,7 +1334,7 @@ const Assessment = ({ mode, onComplete }) => {
   const cd = DOMAIN_META[domain-1];
 
   const nextDomain = () => {
-    if (domain < 5) { setDomain(d=>d+1); scrollRef.current?.scrollTo(0,0); }
+    if (domain < 4) { setDomain(d=>d+1); scrollRef.current?.scrollTo(0,0); }
     else onComplete(resp);
   };
 
@@ -1241,46 +1390,59 @@ const Assessment = ({ mode, onComplete }) => {
 
         <div className="pt-4 pb-8 space-y-3">
 
-          {/* Incomplete prompt — shows exactly what is missing */}
+          {/* Per-domain unanswered warning */}
           {!complete(domain) && domain !== 1 && (
-            <div className="rounded-2xl p-4" style={{background:"#FEF2F2", border:"1.5px solid #FECACA"}}>
-              <p className="text-xs font-black text-red-600 mb-2">
+            <div className="rounded-2xl p-4" style={{background:"#FEF2F2",border:"1.5px solid #FECACA"}}>
+              <p className="text-xs font-black text-red-600 mb-1">
                 ⚠️ {cd.count - answered(domain)} question{cd.count - answered(domain) !== 1 ? "s" : ""} still unanswered in {cd.name}
               </p>
-              <p className="text-xs text-red-500">Scroll up to find and answer all questions — they are highlighted with an empty border. All questions must be answered before you can continue.</p>
+              <p className="text-xs text-red-500">Scroll up — every question with an empty border still needs an answer.</p>
             </div>
           )}
 
-          {/* Show all-domain summary when on last domain and something is incomplete */}
-          {domain === 4 && !allDone && (
-            <div className="rounded-2xl p-4" style={{background:"#FFF7ED", border:"1.5px solid #FED7AA"}}>
-              <p className="text-xs font-black text-orange-700 mb-2">📋 Assessment progress</p>
-              {DOMAIN_META.map(m => (
-                <div key={m.id} className="flex items-center justify-between py-1">
-                  <span className="text-xs font-semibold" style={{color: complete(m.id) ? "#10B981" : m.color}}>
-                    {complete(m.id) ? "✓" : "○"} {m.name}
-                  </span>
-                  {!complete(m.id) && m.id !== 1 && (
-                    <button onClick={() => { setDomain(m.id); scrollRef.current?.scrollTo(0,0); }}
-                      className="text-xs px-3 py-1 rounded-lg font-bold text-white"
-                      style={{background: m.color}}>
-                      Go to {m.code} →
-                    </button>
-                  )}
-                  {complete(m.id) && <span className="text-xs text-green-500">Complete</span>}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Next / Complete button — only shown when current domain is complete */}
-          {complete(domain) && (
+          {/* Continue to next domain */}
+          {complete(domain) && domain < 4 && (
             <button onClick={nextDomain}
               className="w-full py-4 rounded-2xl font-black text-white text-sm"
-              style={{ background: `linear-gradient(135deg,${cd.color},${cd.color}cc)` }}>
-              {domain < 4 ? `Continue → ${DOMAIN_META[domain].name}` : "Complete Assessment ✅"}
+              style={{background:`linear-gradient(135deg,${cd.color},${cd.color}cc)`}}>
+              Continue → {DOMAIN_META[domain].name}
             </button>
           )}
+
+          {/* Domain 4 — always show full progress checklist */}
+          {domain === 4 && (
+            <div className="rounded-2xl p-4 space-y-2" style={{background:"#F8FAFF",border:"1.5px solid #E0E7FF"}}>
+              <p className="text-xs font-black text-indigo-700 mb-2">📋 Completion checklist</p>
+              {DOMAIN_META.map(m => {
+                const done = complete(m.id);
+                return (
+                  <div key={m.id} className="flex items-center justify-between py-0.5">
+                    <span className="text-xs font-semibold" style={{color: done ? "#10B981" : "#EF4444"}}>
+                      {done ? "✓" : "○"} {m.name}
+                    </span>
+                    {!done
+                      ? <button onClick={() => { setDomain(m.id); scrollRef.current?.scrollTo(0,0); }}
+                          className="text-xs px-3 py-1 rounded-lg font-bold text-white"
+                          style={{background: m.color}}>
+                          Go to {m.code} →
+                        </button>
+                      : <span className="text-xs font-bold" style={{color:"#10B981"}}>Done ✓</span>
+                    }
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Generate Report — only when every domain is complete */}
+          {domain === 4 && allDone && (
+            <button onClick={() => onComplete(resp)}
+              className="w-full py-4 rounded-2xl font-black text-white text-base"
+              style={{background:"linear-gradient(135deg,#10B981,#059669)",boxShadow:"0 4px 24px #10B98155"}}>
+              ✅ Generate My Report
+            </button>
+          )}
+
         </div>
       </div>
     </div>
@@ -1333,7 +1495,9 @@ const DomainCognition = ({ set, color, bg }) => {
     if (selected !== null || phase !== 'testing') return;
     setSelected(optIdx);
 
-    const isCorrect = optIdx === item.ans;
+    // Check against shuffled correct position
+    const { newCorrectIdx: correctPos } = shuffleOptions(item.options, item.ans, item.id);
+    const isCorrect = optIdx === correctPos;
     set(item.id, optIdx); // store in parent
 
     const newBandCorrect = { ...bandCorrect, [band]: bandCorrect[band] + (isCorrect?1:0) };
@@ -1480,6 +1644,11 @@ const DomainCognition = ({ set, color, bg }) => {
   const bandPct   = Math.round((qIdx / bandTotal) * 100);
   const val       = selected;
 
+  // Shuffle options deterministically for this question
+  const { shuffled: shuffledOpts, newCorrectIdx } = shuffleOptions(
+    item.options, item.ans, item.id
+  );
+
   return (
     <div className="space-y-4">
       {/* Band indicator + question counter */}
@@ -1510,9 +1679,9 @@ const DomainCognition = ({ set, color, bg }) => {
           {item.renderStimulus()}
         </div>
 
-        {/* 2×2 option grid */}
+        {/* 2×2 option grid — options shuffled per question */}
         <div className="grid grid-cols-2 gap-2.5">
-          {item.options.map((opt, i) => (
+          {shuffledOpts.map((opt, i) => (
             <button key={i} onClick={() => handleAnswer(i)}
               disabled={val !== null}
               className={cx(
@@ -1923,55 +2092,40 @@ const DomainRisk = ({ resp, set, color, bg, mode }) => (
   </div>
 );
 
-// ════ DEMOGRAPHICS — UNIFIED (same structure for all CIBS tools) ══════════════
-const EDUCATION_OPTS = ["No formal education","Primary (up to Std 5)","Secondary (Std 6–10)","Higher Secondary (Std 11–12)","Graduate","Post-Graduate","Doctorate","Other"];
-const REFERRAL_OPTS  = ["OPD / Walk-in","Referred by physician","Referred by school/college","Self-referred","Research study","Community screening","Other"];
-
-const Demographics = ({ onComplete, mode }) => {
-  // Pre-fill FileNo from URL if CIBS sent a link like cibs-valid.vercel.app?reg=CIBS-26-0001
+// ════ DEMOGRAPHICS — UNIFIED MULTILINGUAL ════════════════════════════════════
+const Demographics = ({ onComplete, mode, lang }) => {
+  const t = VT[lang] || VT.en;
   const urlReg      = getURLParam("reg");
   const urlAssessor = getURLParam("assessor");
 
   const [form, setForm] = useState({
-    fileNo:    urlReg || "",          // Registration / FileNo — primary key
-    name:      "",
-    dob:       "",                    // Date of birth — age auto-calculated
-    gender:    "",
-    mobile:    "",
-    email:     "",
-    education: "",
-    occupation:"",
-    referral:  "",
-    assessor:  urlAssessor || "",     // Clinician / assessor name
-    notes:     "",                    // Optional clinical notes
+    fileNo:    urlReg || "", name:"", dob:"", gender:"",
+    mobile:"", email:"", education:"", occupation:"",
+    referral:"", assessor: urlAssessor || "", notes:"",
   });
-  const set = (k,v) => setForm(p => ({ ...p, [k]: v }));
+  const set = (k,v) => setForm(p=>({...p,[k]:v}));
 
-  const ageFromDOB  = calcAge(form.dob);
-  const displayAge  = ageFromDOB || "";
+  const ageFromDOB = calcAge(form.dob);
   const fileNoFinal = form.fileNo.trim() || autoFileNo();
-  const uid         = generateUID(form.mobile, form.dob, form.gender);
+  const uid = generateUID(form.mobile, form.dob, form.gender);
+  const canProceed = form.dob !== "" && form.gender !== "";
 
-  // Require at least: FileNo (or auto) + DOB + gender
-  const canProceed  = form.dob !== "" && form.gender !== "";
-
-  const InputField = ({ k, label, placeholder, type="text", maxLen, readOnly }) => (
+  const Field = ({label, k, type="text", placeholder=""}) => (
     <div>
-      <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
-      <input value={form[k]} onChange={e => set(k, e.target.value)}
-        placeholder={placeholder} type={type} maxLength={maxLen} readOnly={readOnly}
-        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-purple-500"
-        style={readOnly ? {background:"#F5F3FF", color:"#6D28D9", fontWeight:700} : {}}/>
+      <label className="block text-xs font-semibold text-gray-600 mb-1">{label}</label>
+      <input value={form[k]} onChange={e=>set(k,e.target.value)}
+        placeholder={placeholder} type={type}
+        max={type==="date" ? new Date().toISOString().split("T")[0] : undefined}
+        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-purple-500"/>
     </div>
   );
-
-  const SelectField = ({ k, label, opts }) => (
+  const Select = ({label, k, opts}) => (
     <div>
-      <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
-      <select value={form[k]} onChange={e => set(k, e.target.value)}
+      <label className="block text-xs font-semibold text-gray-600 mb-1">{label}</label>
+      <select value={form[k]} onChange={e=>set(k,e.target.value)}
         className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-purple-500 bg-white">
-        <option value="">— Select —</option>
-        {opts.map(o => <option key={o} value={o}>{o}</option>)}
+        <option value="">— —</option>
+        {opts.map(o=><option key={o} value={o}>{o}</option>)}
       </select>
     </div>
   );
@@ -1979,92 +2133,82 @@ const Demographics = ({ onComplete, mode }) => {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="bg-white border-b px-4 py-3 sticky top-0 z-10">
-        <p className="text-xs font-black text-center text-gray-700">Registration & Demographics</p>
-        <p className="text-xs text-center text-gray-400">CIBS-VALID · Patient record — kept strictly confidential</p>
+        <p className="text-xs font-black text-center text-gray-700">{t.regTitle}</p>
+        <p className="text-xs text-center text-gray-400">{t.regSub}</p>
       </div>
-
       <div className="p-4 max-w-sm mx-auto space-y-4 pb-10">
 
-        {/* FileNo banner */}
-        <div className="rounded-2xl p-4" style={{background:"#F5F3FF", border:"1.5px solid #DDD6FE"}}>
-          <p className="text-xs font-black text-purple-700 mb-1">Registration Number (FileNo)</p>
-          {urlReg ? (
-            <>
-              <p className="text-xl font-mono font-black text-purple-800">{urlReg}</p>
-              <p className="text-xs text-purple-500 mt-0.5">Pre-filled by CIBS — this links your records across all tests</p>
-            </>
-          ) : (
-            <>
-              <input value={form.fileNo} onChange={e=>set("fileNo",e.target.value)}
-                placeholder="e.g. CIBS-26-0001  (or leave blank to auto-generate)"
+        {/* FileNo */}
+        <div className="rounded-2xl p-4" style={{background:"#F5F3FF",border:"1.5px solid #DDD6FE"}}>
+          <p className="text-xs font-black text-purple-700 mb-1">{t.fileNoLabel}</p>
+          {urlReg
+            ? <><p className="text-lg font-mono font-black text-purple-800">{urlReg}</p>
+               <p className="text-xs text-purple-500 mt-0.5">{t.fileNoPrefilled}</p></>
+            : <><input value={form.fileNo} onChange={e=>set("fileNo",e.target.value)}
+                placeholder="e.g. CIBS-26-0001"
                 className="w-full border border-purple-300 rounded-xl px-3 py-2 text-sm font-mono outline-none focus:border-purple-600 bg-white mt-1"/>
-              <p className="text-xs text-purple-400 mt-1">Leave blank — a unique number will be created automatically</p>
-            </>
-          )}
+               <p className="text-xs text-purple-400 mt-1">{t.fileNoHint}</p></>
+          }
         </div>
 
-        {/* Personal details */}
-        <p className="text-xs font-black text-gray-500 uppercase tracking-wider">Personal Details</p>
+        {/* Privacy note */}
+        <div className="rounded-xl p-3 text-xs text-purple-700"
+          style={{background:"#F5F3FF",border:"1px solid #DDD6FE"}}>
+          🔒 {t.privacyNote}
+        </div>
 
-        <InputField k="name" label="Full Name (optional — leave blank to stay anonymous)" placeholder="Anonymous"/>
+        <Field k="name" label={t.nameLabel} placeholder="Anonymous"/>
 
+        {/* DOB + age display */}
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Date of Birth ★</label>
+          <label className="block text-xs font-semibold text-gray-600 mb-1">{t.dobLabel}</label>
           <input type="date" value={form.dob} onChange={e=>set("dob",e.target.value)}
             max={new Date().toISOString().split("T")[0]}
             className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-purple-500"/>
-          {displayAge && (
-            <p className="text-xs text-purple-600 mt-1 font-bold">Age: {displayAge} years</p>
-          )}
+          {ageFromDOB && <p className="text-xs text-purple-600 mt-1 font-bold">{t.ageStr}: {ageFromDOB} {t.yearsStr}</p>}
         </div>
 
+        {/* Gender */}
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Gender ★</label>
+          <label className="block text-xs font-semibold text-gray-600 mb-1">{t.genderLabel}</label>
           <div className="grid grid-cols-4 gap-1.5">
-            {["Male","Female","Other","Prefer not to say"].map(g => (
+            {["Male","Female","Other","NSD"].map((g,i)=>(
               <button key={g} onClick={()=>set("gender",g)}
                 className={cx("py-2 rounded-xl text-xs font-semibold border-2 transition-all",
                   form.gender===g ? "border-purple-500 bg-purple-50 text-purple-700" : "border-gray-200 text-gray-400")}>
-                {g==="Prefer not to say"?"NSD":g}
+                {t.genders[i]}
               </button>
             ))}
           </div>
         </div>
 
-        <InputField k="mobile" label="Mobile Number (10 digits)" placeholder="9876543210" type="tel" maxLen={10}/>
-        <InputField k="email"  label="Email (optional — to receive report)" placeholder="you@email.com" type="email"/>
-
-        {/* Background */}
-        <p className="text-xs font-black text-gray-500 uppercase tracking-wider pt-1">Background</p>
-        <SelectField k="education" label="Highest Education Level"    opts={EDUCATION_OPTS}/>
-        <InputField  k="occupation" label="Occupation (optional)"     placeholder="e.g. Farmer, Teacher, Student"/>
-        <SelectField k="referral"  label="How did you come here?"     opts={REFERRAL_OPTS}/>
-
-        {/* Assessor — always shown (filled by clinician in assisted mode) */}
-        <p className="text-xs font-black text-gray-500 uppercase tracking-wider pt-1">Clinical</p>
-        <InputField k="assessor" label="Assessor / Clinician Name" placeholder="Dr. Pangaonkar"/>
-        <InputField k="notes"    label="Clinical Notes / Chief Complaint (optional)" placeholder="Brief note…"/>
+        <Field k="mobile" label={t.mobileLabel} type="tel" placeholder="9876543210"/>
+        <Field k="email"  label={t.emailLabel}  type="email" placeholder="you@email.com"/>
+        <Select k="education" label={t.eduLabel} opts={t.edu}/>
+        <Field  k="occupation" label={t.occLabel} placeholder="e.g. Teacher, Farmer, Student"/>
+        <Select k="referral" label={t.refLabel} opts={t.ref}/>
+        <Field  k="assessor" label={t.assessorLabel} placeholder="Dr. Pangaonkar"/>
+        <Field  k="notes"    label={t.notesLabel}     placeholder="Brief note…"/>
 
         {/* UID preview */}
         {canProceed && (
-          <div className="rounded-xl p-3" style={{background:"#F0FDF4", border:"1px solid #86EFAC"}}>
-            <p className="text-xs font-bold text-green-700 mb-0.5">Anonymous UID (auto-generated)</p>
+          <div className="rounded-xl p-3" style={{background:"#F0FDF4",border:"1px solid #86EFAC"}}>
+            <p className="text-xs font-bold text-green-700 mb-0.5">{t.uidLabel}</p>
             <p className="text-sm font-mono font-black text-green-800">{uid}</p>
-            <p className="text-xs text-green-600 mt-0.5">FileNo: <strong>{fileNoFinal}</strong> · Age: {displayAge} yrs · {form.gender}</p>
+            <p className="text-xs text-green-600 mt-0.5">{t.fileNoDisplay}: <strong>{fileNoFinal}</strong> · {ageFromDOB} {t.yearsStr} · {form.gender}</p>
           </div>
         )}
 
-        <button onClick={() => onComplete({ ...form, fileNo: fileNoFinal, age: displayAge || form.dob, uid })}
+        <button onClick={()=>onComplete({...form,fileNo:fileNoFinal,age:ageFromDOB||"",uid})}
           disabled={!canProceed}
           className="w-full py-4 rounded-2xl font-black text-white text-base disabled:opacity-40"
-          style={{ background: canProceed ? "linear-gradient(135deg,#8B5CF6,#6D28D9)" : "#9CA3AF" }}>
-          Generate My Report →
+          style={{background:canProceed?"linear-gradient(135deg,#8B5CF6,#6D28D9)":"#9CA3AF"}}>
+          {t.proceedBtn}
         </button>
       </div>
     </div>
   );
 };
-
 // ════ REPORT ══════════════════════════════════════════════════════════════════
 const Report = ({ responses, demographics, mode }) => {
   const [tab, setTab] = useState(mode==="self" ? "wellbeing" : "clinical");
@@ -3048,12 +3192,12 @@ const ClinicalReport = ({ bfi, duke, cssCl, audCl, ravensScore, ravensIQ, ravens
 // ═══════════════════════════ MAIN APP ════════════════════════════════════════
 
 export default function CIBSValid() {
-  const [screen, setScreen] = useState("welcome"); // welcome → eligibility → consent → assessment → demographics → report
-  const [mode, setMode] = useState("self");
-  const [responses, setResponses] = useState(null);
+  // Screen flow: lang → demographics → welcome → eligibility → consent → assessment → report
+  const [screen,       setScreen]       = useState("lang");
+  const [lang,         setLang]         = useState("en");
+  const [mode,         setMode]         = useState("self");
   const [demographics, setDemographics] = useState(null);
-
-  const startFlow = (m) => { setMode(m); setScreen("eligibility"); };
+  const [responses,    setResponses]    = useState(null);
 
   return (
     <div className="font-sans">
@@ -3068,12 +3212,29 @@ export default function CIBSValid() {
         button:active { transform: scale(0.97); }
       `}</style>
 
-      {screen==="welcome"     && <Welcome onSelf={()=>startFlow("self")} onClinician={()=>startFlow("assisted")}/>}
-      {screen==="eligibility" && <Eligibility onResult={(r)=>{ setMode(r); setScreen("consent"); }}/>}
-      {screen==="consent"     && <Consent mode={mode} onConsent={()=>setScreen("assessment")}/>}
-      {screen==="assessment"  && <Assessment mode={mode} onComplete={(r)=>{ setResponses(r); setScreen("demographics"); }}/>}
-      {screen==="demographics"&& <Demographics onComplete={(d)=>{ setDemographics(d); setScreen("report"); }}/>}
-      {screen==="report"      && responses && demographics &&
+      {screen==="lang" &&
+        <LanguageScreen onSelect={l=>{ setLang(l); setScreen("demographics"); }}/>}
+
+      {screen==="demographics" &&
+        <Demographics
+          mode={mode} lang={lang}
+          onComplete={d=>{ setDemographics(d); setScreen("welcome"); }}/>}
+
+      {screen==="welcome" &&
+        <Welcome
+          onSelf={()=>{ setMode("self"); setScreen("eligibility"); }}
+          onClinician={()=>{ setMode("assisted"); setScreen("eligibility"); }}/>}
+
+      {screen==="eligibility" &&
+        <Eligibility onResult={r=>{ setMode(r); setScreen("consent"); }}/>}
+
+      {screen==="consent" &&
+        <Consent mode={mode} onConsent={()=>setScreen("assessment")}/>}
+
+      {screen==="assessment" &&
+        <Assessment mode={mode} onComplete={r=>{ setResponses(r); setScreen("report"); }}/>}
+
+      {screen==="report" && responses && demographics &&
         <Report responses={responses} demographics={demographics} mode={mode}/>}
     </div>
   );
