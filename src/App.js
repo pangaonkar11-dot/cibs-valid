@@ -1,567 +1,18 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 
-// ══════════════════════════════════════════════════════════════════════════════
-//  CIBS-VALID  |  Validation Assessment of Longitudinal Instrument Diagnostics
-//  Gold Standard Battery — Adult Version
-//
-//  Domain 1: Cognitive    — Ravens CAT (CIBS original, Cattell/Raven framework)
-//  Domain 2: Personality  — BFI-10 (Rammstedt & John, 2007) +
-//                           PID-5-BF (APA, 2013) — DSM-5 Clusters
-//  Domain 3: Health       — WHO-5 Wellbeing (WHO, 2024, CC BY-NC-SA 3.0 IGO) +
-//                           PHQ-9 Depression (Pfizer, free) +
-//                           GAD-7 Anxiety (Pfizer, free) +
-//                           Rosenberg RSES (public domain)
-//  Domain 4: Risk         — C-SSRS (Columbia, public domain) +
-//                           AUDIT-C (WHO, public domain)
-//
-//  Languages: English | हिंदी | मराठी
-//  © 2026 Central Institute of Behavioural Sciences, Nagpur
-//  Dr. Shailesh V. Pangaonkar | Dr. Deepali S. Pangaonkar
-// ══════════════════════════════════════════════════════════════════════════════
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║   CIBS-VALID  —  Standalone Validation Assessment Battery  v 1.0        ║
+// ║   Central Institute of Behavioural Sciences, Nagpur                      ║
+// ║   Domains: Cognition · Personality · Health · Depression · Risk          ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
 
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxCR0_X2xe7ojq38W3XVt-3VAp3JISfH9DLwTolOi61TZcYAOOZhtD9oIJoMmZqU8rk/exec";
+// ── GOOGLE SHEETS DATA PIPELINE ──────────────────────────────────────────────
+// Paste your deployed Apps Script Web App URL below after Step 4 of setup guide
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxEPRW6q0Ew1dbQfRzQBMQ1mHCWdnPFB6aqs9a7Mw_Pp8Zq0alwZIVQmw_VzB77LXfIsQ/exec";
 
-// ── Utility ───────────────────────────────────────────────────────
-const cx = (...args) => args.filter(Boolean).join(" ");
+// ─────────────── INSTRUMENT DATA ───────────────────────────────────────────
 
-async function submitToSheet(payload) {
-  try {
-    const res = await fetch(APPS_SCRIPT_URL, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain" },
-      body: JSON.stringify(payload)
-    });
-    const result = await res.json();
-    console.log("✅ CIBS-VALID submission:", result);
-    return result;
-  } catch(err) {
-    console.error("❌ Submission error:", err);
-    return { status: "error" };
-  }
-}
-
-
-// ══════════════════════════════════════════════════════════════════════════════
-//  TRANSLATIONS — English | Hindi | Marathi
-// ══════════════════════════════════════════════════════════════════════════════
-const T = {
-  en: {
-    appTitle: "CIBS-VALID",
-    subtitle: "Validation Assessment Battery · Adult",
-    org: "Central Institute of Behavioural Sciences, Nagpur",
-    choose: "Choose Language / भाषा चुनें / भाषा निवडा",
-    subjInfo: "Participant Information",
-    name: "Full Name", age: "Age (years)", gender: "Gender",
-    gM:"Male", gF:"Female", gO:"Other", gN:"Prefer not to say",
-    edu: "Education", mobile: "Mobile (10 digits)",
-    examiner: "Examiner", diagnosis: "Diagnosis (if any)",
-    setting: "Setting", vistaUID: "VISTA UID (if taken)",
-    disclaimer: "Important Notice",
-    discPoints: [
-      "CIBS-VALID is a standardised self-report battery for research and clinical screening. It is NOT a diagnostic instrument.",
-      "Domain 1 uses the CIBS Cognitive Ability Test (Ravens framework). Domains 2-4 use internationally validated gold-standard instruments.",
-      "PHQ-9 & GAD-7: © Pfizer Inc. Free unrestricted use. WHO-5: © WHO 2024, CC BY-NC-SA 3.0 IGO. BFI-10: Rammstedt & John 2007, open access for non-commercial research. PID-5-BF: © APA 2013, free for researchers and clinicians. RSES: Public domain. C-SSRS: © Columbia University, public domain. AUDIT-C: © WHO, public domain.",
-      "All scores are screening indicators only. Clinical decisions must be made by a qualified professional.",
-    ],
-    agreeText: "I have read and understood the above. I wish to proceed.",
-    proceedBtn: "Begin Assessment →",
-    domains: ["Cognition", "Personality", "Health & Wellbeing", "Risk Screening"],
-    domainNames: [
-      "D1 — Cognitive Ability (Ravens CAT)",
-      "D2 — Personality (BFI-10 + PID-5-BF)",
-      "D3 — Health & Wellbeing (WHO-5 + PHQ-9 + GAD-7 + RSES)",
-      "D4 — Risk Screening (C-SSRS + AUDIT-C)",
-    ],
-    generating: "Generating Report…",
-    forSelf: "Your Summary",
-    forClinician: "Clinician Report",
-    print: "🖨️ Print / PDF",
-    newAssess: "🔄 New Assessment",
-    // BFI
-    bfi_intro: "Rate how well each statement describes you.",
-    bfi_scale: "1 = Strongly Disagree · 5 = Strongly Agree",
-    bfi_items: [
-      "I am outgoing and sociable",
-      "I am sometimes rude or critical to others",
-      "I am reliable and can always be counted on",
-      "I worry a lot",
-      "I enjoy creative work and new ideas",
-      "I am quiet and reserved",
-      "I am generally trusting and cooperative",
-      "I can be somewhat lazy or disorganised",
-      "I stay calm and emotionally stable",
-      "I have few artistic or creative interests"
-    ],
-    // PID-5-BF
-    pid5_intro: "Rate how well each statement describes you in general.",
-    pid5_scale: "0 = Very False · 1 = Sometimes False · 2 = Sometimes True · 3 = Very True",
-    pid5_items: [
-      "People would describe me as reckless.",
-      "I feel like I act totally on impulse.",
-      "Even though I know better, I can't stop making rash decisions.",
-      "I often feel like nothing I do really matters.",
-      "Others see me as irresponsible.",
-      "I'm not good at planning ahead.",
-      "My thoughts often don't make sense to others.",
-      "I worry about almost everything.",
-      "I get emotional easily, often for very little reason.",
-      "I fear being alone in life more than anything else.",
-      "I am a very anxious person.",
-      "I am easily distracted.",
-      "I don't hesitate to cheat if it gets me ahead.",
-      "I like to stir up excitement if things seem boring.",
-      "I'll say anything to get what I want.",
-      "I keep my distance from people.",
-      "I don't show emotions strongly.",
-      "I prefer to keep romance out of my life.",
-      "I don't get emotional.",
-      "I am not interested in making friends.",
-      "I get fixated on certain things and can't stop.",
-      "Even the slightest things make me feel terrible inside.",
-      "I have a very short temper.",
-      "I react strongly to most things.",
-      "I always worry about something.",
-    ],
-    pid5_domains: [
-      "Disinhibition",
-      "Negative Affect",
-      "Psychoticism",
-      "Detachment",
-      "Antagonism",
-    ],
-    // WHO-5
-    who5_intro: "Over the last two weeks, please rate how often you have felt the following:",
-    who5_scale: "0 = At no time · 1 = Some of the time · 2 = Less than half · 3 = More than half · 4 = Most of the time · 5 = All of the time",
-    who5_items: [
-      "I have felt cheerful and in good spirits",
-      "I have felt calm and relaxed",
-      "I have felt active and vigorous",
-      "I woke up feeling fresh and rested",
-      "My daily life has been filled with things that interest me",
-    ],
-    who5_citation: "WHO-5: © World Health Organization 2024. Licence: CC BY-NC-SA 3.0 IGO.",
-    // PHQ-9
-    phq9_intro: "Over the last 2 weeks, how often have you been bothered by the following?",
-    phq9_scale: "0 = Not at all · 1 = Several days · 2 = More than half the days · 3 = Nearly every day",
-    phq9_items: [
-      "Little interest or pleasure in doing things",
-      "Feeling down, depressed, or hopeless",
-      "Trouble falling or staying asleep, or sleeping too much",
-      "Feeling tired or having little energy",
-      "Poor appetite or overeating",
-      "Feeling bad about yourself — or that you are a failure",
-      "Trouble concentrating on things",
-      "Moving or speaking so slowly — or being unusually fidgety/restless",
-      "Thoughts that you would be better off dead, or of hurting yourself",
-    ],
-    phq9_citation: "PHQ-9: Kroenke, Spitzer & Williams. © Pfizer Inc. Free unrestricted use.",
-    // GAD-7
-    gad7_intro: "Over the last 2 weeks, how often have you been bothered by the following?",
-    gad7_items: [
-      "Feeling nervous, anxious, or on edge",
-      "Not being able to stop or control worrying",
-      "Worrying too much about different things",
-      "Trouble relaxing",
-      "Being so restless that it's hard to sit still",
-      "Becoming easily annoyed or irritable",
-      "Feeling afraid as if something awful might happen",
-    ],
-    gad7_citation: "GAD-7: Spitzer et al. © Pfizer Inc. Free unrestricted use.",
-    // RSES
-    rses_intro: "Rate how strongly you agree or disagree with each statement.",
-    rses_scale: "1 = Strongly Disagree · 2 = Disagree · 3 = Agree · 4 = Strongly Agree",
-    rses_items: [
-      "I feel that I am a person of worth, at least on an equal plane with others",
-      "I feel that I have a number of good qualities",
-      "All in all, I am inclined to feel that I am a failure",
-      "I am able to do things as well as most other people",
-      "I feel I do not have much to be proud of",
-      "I take a positive attitude toward myself",
-      "On the whole, I am satisfied with myself",
-      "I wish I could have more respect for myself",
-      "I certainly feel useless at times",
-      "At times I think I am no good at all",
-    ],
-    rses_citation: "Rosenberg Self-Esteem Scale: Rosenberg, 1965. Public domain.",
-    // C-SSRS
-    cssrs_title: "Part A — Suicidality Screen (C-SSRS)",
-    cssrs_note: "These questions are asked for health monitoring only. All responses are strictly confidential.",
-    cssrs_items: [
-      "Have you wished you were dead or hoped you could go to sleep and not wake up?",
-      "Have you had any actual thoughts of killing yourself?",
-      "Have you been thinking about how you might do this?",
-      "Have you had these thoughts and had some intention of acting on them?",
-      "Have you started to work out or act on the details of how to kill yourself?",
-    ],
-    cssrs_citation: "C-SSRS: Posner et al., Columbia University. Public domain.",
-    // AUDIT-C
-    audit_title: "Part B — Alcohol Use (AUDIT-C)",
-    audit_note: "If you never drink alcohol, select 'Never' — further questions will be skipped.",
-    audit_never_msg: "✓ Non-drinker confirmed — alcohol questions skipped",
-    audit_citation: "AUDIT-C: Bush et al., 1998. © World Health Organization. Public domain.",
-    yes: "Yes", no: "No",
-  },
-  hi: {
-    appTitle: "CIBS-VALID",
-    subtitle: "मान्यता मूल्यांकन बैटरी · वयस्क",
-    org: "केंद्रीय व्यावहारिक विज्ञान संस्थान, नागपुर",
-    choose: "भाषा चुनें",
-    subjInfo: "प्रतिभागी जानकारी",
-    name: "पूरा नाम", age: "आयु (वर्ष)", gender: "लिंग",
-    gM:"पुरुष", gF:"महिला", gO:"अन्य", gN:"बताना नहीं चाहते",
-    edu: "शिक्षा", mobile: "मोबाइल (10 अंक)",
-    examiner: "परीक्षक", diagnosis: "निदान (यदि हो)",
-    setting: "सेटिंग", vistaUID: "VISTA UID (यदि लिया हो)",
-    disclaimer: "महत्वपूर्ण सूचना",
-    discPoints: [
-      "CIBS-VALID एक मानकीकृत मूल्यांकन बैटरी है। यह निदान उपकरण नहीं है।",
-      "सभी स्कोर केवल जांच संकेतक हैं। नैदानिक निर्णय योग्य पेशेवर द्वारा लिए जाने चाहिए।",
-    ],
-    agreeText: "मैंने उपरोक्त पढ़ और समझ लिया है। मैं आगे बढ़ना चाहता/चाहती हूँ।",
-    proceedBtn: "मूल्यांकन शुरू करें →",
-    domains: ["संज्ञान", "व्यक्तित्व", "स्वास्थ्य एवं कल्याण", "जोखिम जांच"],
-    domainNames: [
-      "D1 — संज्ञानात्मक क्षमता (Ravens CAT)",
-      "D2 — व्यक्तित्व (BFI-10 + PID-5-BF)",
-      "D3 — स्वास्थ्य एवं कल्याण (WHO-5 + PHQ-9 + GAD-7 + RSES)",
-      "D4 — जोखिम जांच (C-SSRS + AUDIT-C)",
-    ],
-    generating: "रिपोर्ट तैयार हो रही है…",
-    forSelf: "आपका सारांश", forClinician: "चिकित्सक रिपोर्ट",
-    print: "🖨️ प्रिंट / PDF", newAssess: "🔄 नया मूल्यांकन",
-    bfi_intro: "प्रत्येक कथन आपका वर्णन कितनी अच्छी तरह करता है, यह बताएं।",
-    bfi_scale: "1 = बिल्कुल असहमत · 5 = पूरी तरह सहमत",
-    bfi_items: [
-      "मैं मिलनसार और सामाजिक हूँ",
-      "मैं कभी-कभी दूसरों के प्रति कठोर या आलोचनात्मक होता/होती हूँ",
-      "मैं विश्वसनीय हूँ और हमेशा भरोसा किया जा सकता/सकती है",
-      "मैं बहुत चिंता करता/करती हूँ",
-      "मुझे रचनात्मक कार्य और नए विचार पसंद हैं",
-      "मैं शांत और संकोची हूँ",
-      "मैं आमतौर पर विश्वास करने वाला/वाली और सहयोगी हूँ",
-      "मैं कभी-कभी आलसी या अव्यवस्थित हो सकता/सकती हूँ",
-      "मैं शांत रहता/रहती हूँ और भावनात्मक रूप से स्थिर हूँ",
-      "मेरी कलात्मक या रचनात्मक रुचियाँ बहुत कम हैं"
-    ],
-    pid5_intro: "प्रत्येक कथन आप पर कितना लागू होता है, यह बताएं।",
-    pid5_scale: "0 = बिल्कुल गलत · 1 = कभी-कभी गलत · 2 = कभी-कभी सच · 3 = बिल्कुल सच",
-    pid5_items: [
-      "लोग मुझे लापरवाह कहते हैं।",
-      "मुझे लगता है मैं बिना सोचे काम करता/करती हूँ।",
-      "जानते हुए भी मैं जल्दबाजी में फैसले लेता/लेती हूँ।",
-      "मुझे अक्सर लगता है कि मैं जो करता/करती हूँ उसका कोई महत्व नहीं।",
-      "दूसरे मुझे गैरजिम्मेदार मानते हैं।",
-      "मैं आगे की योजना नहीं बना पाता/पाती।",
-      "मेरे विचार दूसरों को अजीब लगते हैं।",
-      "मैं लगभग हर चीज के बारे में चिंता करता/करती हूँ।",
-      "मैं जल्दी भावुक हो जाता/जाती हूँ।",
-      "मुझे जिंदगी में अकेले रहने का डर है।",
-      "मैं बहुत चिंतित रहता/करती हूँ।",
-      "मेरा ध्यान जल्दी भटक जाता है।",
-      "मैं आगे बढ़ने के लिए धोखा देने में नहीं हिचकिचाता/हिचकिचाती।",
-      "मुझे उत्साह पैदा करना अच्छा लगता है।",
-      "मैं जो चाहता/चाहती हूँ उसके लिए कुछ भी कह सकता/सकती हूँ।",
-      "मैं लोगों से दूरी बनाए रखता/रखती हूँ।",
-      "मैं भावनाएं खुलकर नहीं दिखाता/दिखाती।",
-      "मैं जीवन में रोमांस से दूर रहना पसंद करता/करती हूँ।",
-      "मैं भावुक नहीं होता/होती।",
-      "मुझे दोस्त बनाने में कोई रुचि नहीं।",
-      "मैं कुछ चीजों पर ध्यान केंद्रित करता/करती हूँ और रुक नहीं पाता/पाती।",
-      "छोटी-छोटी बातें भी मुझे बहुत परेशान करती हैं।",
-      "मेरा गुस्सा बहुत जल्दी भड़कता है।",
-      "मैं अधिकांश चीजों पर तीव्र प्रतिक्रिया करता/करती हूँ।",
-      "मैं हमेशा किसी न किसी बात की चिंता करता/करती हूँ।",
-    ],
-    pid5_domains: ["अवरोध-हीनता","नकारात्मक प्रभाव","मनोविकृति","अलगाव","विरोध"],
-    who5_intro: "पिछले दो हफ्तों में आपने निम्नलिखित कितनी बार महसूस किया?",
-    who5_scale: "0 = कभी नहीं · 1 = कभी-कभी · 2 = आधे से कम समय · 3 = आधे से ज्यादा · 4 = अधिकांश समय · 5 = हर समय",
-    who5_items: [
-      "मैंने खुशमिजाज और अच्छे मूड में महसूस किया",
-      "मैंने शांत और तनावमुक्त महसूस किया",
-      "मैंने सक्रिय और उत्साहित महसूस किया",
-      "मैं सुबह तरोताजा और आराम से उठा/उठी",
-      "मेरी दिनचर्या रुचिकर चीजों से भरी रही",
-    ],
-    who5_citation: "WHO-5: © विश्व स्वास्थ्य संगठन 2024. Licence: CC BY-NC-SA 3.0 IGO.",
-    phq9_intro: "पिछले 2 हफ्तों में निम्नलिखित समस्याओं से आप कितने परेशान रहे?",
-    phq9_scale: "0 = बिल्कुल नहीं · 1 = कई दिन · 2 = आधे से ज्यादा दिन · 3 = लगभग हर दिन",
-    phq9_items: [
-      "किसी काम में रुचि या आनंद न आना",
-      "उदास, निराश या हताश महसूस करना",
-      "नींद न आना या बहुत ज्यादा सोना",
-      "थकान महसूस करना या ऊर्जा न होना",
-      "भूख न लगना या बहुत ज्यादा खाना",
-      "खुद को नाकाम या परिवार को निराश करने वाला/वाली समझना",
-      "किसी काम में ध्यान न लगना",
-      "बहुत धीमे बोलना/चलना या बहुत बेचैन रहना",
-      "खुद को नुकसान पहुंचाने या मर जाने के विचार आना",
-    ],
-    phq9_citation: "PHQ-9: Kroenke, Spitzer & Williams. © Pfizer Inc. निःशुल्क उपयोग।",
-    gad7_intro: "पिछले 2 हफ्तों में निम्नलिखित समस्याओं से आप कितने परेशान रहे?",
-    gad7_items: [
-      "घबराहट, बेचैनी या तनाव महसूस करना",
-      "चिंता को रोक न पाना",
-      "अलग-अलग चीजों की बहुत ज्यादा चिंता करना",
-      "आराम करने में कठिनाई",
-      "इतना बेचैन रहना कि चुप बैठना मुश्किल हो",
-      "आसानी से चिड़चिड़ा/चिड़चिड़ी हो जाना",
-      "कुछ बुरा होने का डर",
-    ],
-    gad7_citation: "GAD-7: Spitzer et al. © Pfizer Inc. निःशुल्क उपयोग।",
-    rses_intro: "प्रत्येक कथन से आप कितना सहमत या असहमत हैं, यह बताएं।",
-    rses_scale: "1 = पूरी तरह असहमत · 2 = असहमत · 3 = सहमत · 4 = पूरी तरह सहमत",
-    rses_items: [
-      "मुझे लगता है कि मैं एक मूल्यवान व्यक्ति हूँ",
-      "मुझे लगता है कि मुझमें कई अच्छे गुण हैं",
-      "कुल मिलाकर मुझे लगता है कि मैं असफल हूँ",
-      "मैं अधिकांश लोगों जितना काम कर सकता/सकती हूँ",
-      "मुझे लगता है कि मुझमें गर्व करने के लिए ज्यादा कुछ नहीं है",
-      "मैं खुद के प्रति सकारात्मक दृष्टिकोण रखता/रखती हूँ",
-      "कुल मिलाकर मैं खुद से संतुष्ट हूँ",
-      "काश मुझे खुद का और अधिक सम्मान हो पाता",
-      "मुझे कभी-कभी बेकार लगता है",
-      "कभी-कभी मुझे लगता है कि मैं किसी काम का नहीं हूँ",
-    ],
-    rses_citation: "Rosenberg Self-Esteem Scale: सार्वजनिक डोमेन।",
-    cssrs_title: "भाग A — आत्महत्या जांच (C-SSRS)",
-    cssrs_note: "ये प्रश्न केवल स्वास्थ्य निगरानी के लिए हैं। सभी उत्तर पूरी तरह गोपनीय हैं।",
-    cssrs_items: [
-      "क्या आपने कभी चाहा कि आप मर जाएं या सो जाएं और न उठें?",
-      "क्या आपके मन में खुद को मारने के विचार आए हैं?",
-      "क्या आप सोच रहे हैं कि यह कैसे किया जाए?",
-      "क्या आपने ऐसा करने का इरादा किया है?",
-      "क्या आपने इसकी योजना बनाना शुरू किया है?",
-    ],
-    cssrs_citation: "C-SSRS: कोलंबिया विश्वविद्यालय। सार्वजनिक डोमेन।",
-    audit_title: "भाग B — शराब का उपयोग (AUDIT-C)",
-    audit_note: "यदि आप कभी शराब नहीं पीते, तो 'कभी नहीं' चुनें — आगे के प्रश्न छोड़े जाएंगे।",
-    audit_never_msg: "✓ पुष्टि हुई — शराब के प्रश्न छोड़े गए",
-    audit_citation: "AUDIT-C: WHO। सार्वजनिक डोमेन।",
-    yes: "हाँ", no: "नहीं",
-  },
-  mr: {
-    appTitle: "CIBS-VALID",
-    subtitle: "प्रमाणीकरण मूल्यांकन बॅटरी · प्रौढ",
-    org: "केंद्रीय वर्तणूक विज्ञान संस्था, नागपूर",
-    choose: "भाषा निवडा",
-    subjInfo: "सहभागी माहिती",
-    name: "पूर्ण नाव", age: "वय (वर्षे)", gender: "लिंग",
-    gM:"पुरुष", gF:"स्त्री", gO:"इतर", gN:"सांगू इच्छित नाही",
-    edu: "शिक्षण", mobile: "मोबाईल (10 अंक)",
-    examiner: "परीक्षक", diagnosis: "निदान (असल्यास)",
-    setting: "सेटिंग", vistaUID: "VISTA UID (घेतले असल्यास)",
-    disclaimer: "महत्त्वाची सूचना",
-    discPoints: [
-      "CIBS-VALID हे एक मानकीकृत मूल्यांकन साधन आहे. हे निदान साधन नाही.",
-      "सर्व स्कोर केवळ तपासणी निर्देशक आहेत. वैद्यकीय निर्णय पात्र व्यावसायिकाद्वारे घेतले जावेत.",
-    ],
-    agreeText: "मी वरील वाचले आणि समजले. मला पुढे जायचे आहे.",
-    proceedBtn: "मूल्यांकन सुरू करा →",
-    domains: ["संज्ञान", "व्यक्तिमत्व", "आरोग्य व कल्याण", "जोखीम तपासणी"],
-    domainNames: [
-      "D1 — संज्ञानात्मक क्षमता (Ravens CAT)",
-      "D2 — व्यक्तिमत्व (BFI-10 + PID-5-BF)",
-      "D3 — आरोग्य व कल्याण (WHO-5 + PHQ-9 + GAD-7 + RSES)",
-      "D4 — जोखीम तपासणी (C-SSRS + AUDIT-C)",
-    ],
-    generating: "अहवाल तयार होत आहे…",
-    forSelf: "आपला सारांश", forClinician: "वैद्यकीय अहवाल",
-    print: "🖨️ प्रिंट / PDF", newAssess: "🔄 नवीन मूल्यांकन",
-    bfi_intro: "प्रत्येक विधान आपले किती अचूक वर्णन करते ते सांगा.",
-    bfi_scale: "1 = पूर्णपणे असहमत · 5 = पूर्णपणे सहमत",
-    bfi_items: [
-      "मी मिळून-मिसळून राहणारा/री आणि सामाजिक आहे",
-      "मी कधी-कधी इतरांशी कठोर किंवा टीकात्मक असतो/असते",
-      "मी विश्वासू आहे आणि माझ्यावर नेहमी अवलंबून राहता येते",
-      "मी खूप काळजी करतो/करते",
-      "मला सर्जनशील काम आणि नवीन कल्पना आवडतात",
-      "मी शांत आणि संकोची आहे",
-      "मी सहसा विश्वास ठेवणारा/री आणि सहकार्य करणारा/री आहे",
-      "मी कधी-कधी आळशी किंवा अव्यवस्थित असतो/असते",
-      "मी शांत राहतो/राहते आणि भावनिकदृष्ट्या स्थिर आहे",
-      "माझ्या कलात्मक किंवा सर्जनशील आवडी खूप कमी आहेत"
-    ],
-    pid5_intro: "प्रत्येक विधान तुमच्यावर सामान्यतः किती लागू होते ते सांगा.",
-    pid5_scale: "0 = खूप चुकीचे · 1 = कधी-कधी चुकीचे · 2 = कधी-कधी खरे · 3 = खूप खरे",
-    pid5_items: [
-      "लोक मला बेफिकीर म्हणतात.",
-      "मला वाटते मी उत्स्फूर्तपणे वागतो/वागते.",
-      "माहीत असूनही मी घाईने निर्णय घेतो/घेते.",
-      "मला अनेकदा वाटते माझ्या कृतींना काही महत्त्व नाही.",
-      "इतर मला बेजबाबदार मानतात.",
-      "मी पुढील नियोजन करण्यात कमकुवत आहे.",
-      "माझे विचार इतरांना विचित्र वाटतात.",
-      "मी जवळजवळ प्रत्येक गोष्टीची काळजी करतो/करते.",
-      "मी सहज भावनिक होतो/होते.",
-      "आयुष्यात एकट्याने राहण्याची भीती वाटते.",
-      "मी खूप चिंताग्रस्त आहे.",
-      "माझे लक्ष सहज विचलित होते.",
-      "पुढे जाण्यासाठी फसवणूक करण्यास मी मागेपुढे पाहत नाही.",
-      "कंटाळा आल्यावर मला उत्साह निर्माण करायला आवडते.",
-      "हवे ते मिळवण्यासाठी मी काहीही बोलतो/बोलते.",
-      "मी लोकांपासून दूर राहतो/राहते.",
-      "मी भावना उघडपणे दाखवत नाही.",
-      "मला आयुष्यात प्रेमसंबंध टाळायचे आहेत.",
-      "मला भावना होत नाहीत.",
-      "मला मित्र बनवण्यात रस नाही.",
-      "मी काही गोष्टींवर लक्ष केंद्रित करतो/करते आणि थांबू शकत नाही.",
-      "अगदी छोट्या गोष्टी देखील मला खूप वाईट वाटवतात.",
-      "माझा राग खूप लवकर भडकतो.",
-      "मी बहुतेक गोष्टींवर जोरदार प्रतिक्रिया देतो/देते.",
-      "मी नेहमी कशाची तरी काळजी करतो/करते.",
-    ],
-    pid5_domains: ["निरोधकता","नकारात्मक परिणाम","मनोविकृती","अलिप्तता","विरोधीपणा"],
-    who5_intro: "गेल्या दोन आठवड्यांत तुम्हाला खालील गोष्टी किती वेळा जाणवल्या?",
-    who5_scale: "0 = कधीच नाही · 1 = कधी-कधी · 2 = निम्म्यापेक्षा कमी · 3 = निम्म्यापेक्षा जास्त · 4 = बहुतेक वेळा · 5 = सर्व वेळ",
-    who5_items: [
-      "मला आनंदी आणि चांगल्या मनःस्थितीत वाटले",
-      "मला शांत आणि तणावमुक्त वाटले",
-      "मला सक्रिय आणि उत्साही वाटले",
-      "मी सकाळी ताजेतवाने आणि विश्रांती घेऊन उठलो/उठले",
-      "माझी दैनंदिन जीवनात रस असलेल्या गोष्टी भरलेल्या होत्या",
-    ],
-    who5_citation: "WHO-5: © जागतिक आरोग्य संघटना 2024. Licence: CC BY-NC-SA 3.0 IGO.",
-    phq9_intro: "गेल्या 2 आठवड्यांत खालील समस्यांनी तुम्हाला किती त्रास झाला?",
-    phq9_scale: "0 = अजिबात नाही · 1 = काही दिवस · 2 = निम्म्यापेक्षा जास्त दिवस · 3 = जवळजवळ रोज",
-    phq9_items: [
-      "कोणत्याही गोष्टीत रस किंवा आनंद नसणे",
-      "उदास, निराश किंवा हताश वाटणे",
-      "झोप न येणे किंवा खूप जास्त झोपणे",
-      "थकवा येणे किंवा उर्जा नसणे",
-      "भूक न लागणे किंवा जास्त खाणे",
-      "स्वतःबद्दल वाईट वाटणे किंवा अपयशी वाटणे",
-      "एकाग्र होण्यात अडचण येणे",
-      "खूप हळू बोलणे/चालणे किंवा खूप अस्वस्थ राहणे",
-      "स्वतःला दुखवण्याचे किंवा मरण्याचे विचार येणे",
-    ],
-    phq9_citation: "PHQ-9: Kroenke, Spitzer & Williams. © Pfizer Inc. विनामूल्य वापर.",
-    gad7_intro: "गेल्या 2 आठवड्यांत खालील समस्यांनी तुम्हाला किती त्रास झाला?",
-    gad7_items: [
-      "अस्वस्थ, चिंताग्रस्त किंवा तणावाखाली वाटणे",
-      "काळजी थांबवण्यास किंवा नियंत्रित करण्यास असमर्थता",
-      "वेगवेगळ्या गोष्टींची जास्त काळजी करणे",
-      "आराम करण्यात अडचण",
-      "इतके अस्वस्थ राहणे की शांत बसणे कठीण जाते",
-      "सहज चिडचिड होणे",
-      "काहीतरी भयंकर होईल असे वाटणे",
-    ],
-    gad7_citation: "GAD-7: Spitzer et al. © Pfizer Inc. विनामूल्य वापर.",
-    rses_intro: "प्रत्येक विधानाशी तुम्ही किती सहमत किंवा असहमत आहात ते सांगा.",
-    rses_scale: "1 = पूर्णपणे असहमत · 2 = असहमत · 3 = सहमत · 4 = पूर्णपणे सहमत",
-    rses_items: [
-      "मला वाटते मी एक मूल्यवान व्यक्ती आहे",
-      "मला वाटते माझ्यात अनेक चांगले गुण आहेत",
-      "एकूणच मला वाटते मी अयशस्वी आहे",
-      "मी बहुतेक लोकांइतके काम करू शकतो/शकते",
-      "मला वाटते माझ्याकडे अभिमान बाळगण्यासारखे फारसे नाही",
-      "मी स्वतःबद्दल सकारात्मक दृष्टिकोन ठेवतो/ठेवते",
-      "एकूणच मी स्वतःवर समाधानी आहे",
-      "मला स्वतःबद्दल जास्त आदर असायला हवा होता",
-      "कधी-कधी मला निरुपयोगी वाटते",
-      "कधी-कधी मला वाटते मी कुठल्याच कामाचा/कामाची नाही",
-    ],
-    rses_citation: "Rosenberg Self-Esteem Scale: सार्वजनिक डोमेन.",
-    cssrs_title: "भाग A — आत्महत्या तपासणी (C-SSRS)",
-    cssrs_note: "हे प्रश्न केवळ आरोग्य देखरेखीसाठी आहेत. सर्व उत्तरे पूर्णपणे गोपनीय आहेत.",
-    cssrs_items: [
-      "तुम्हाला कधी वाटले की तुम्ही मराल तर बरे होईल?",
-      "तुम्हाला स्वतःला मारण्याचे विचार आले आहेत का?",
-      "हे कसे करायचे याचा तुम्ही विचार केला आहे का?",
-      "तुम्ही असे करण्याचा इरादा केला आहे का?",
-      "तुम्ही यासाठी तयारी करायला सुरुवात केली आहे का?",
-    ],
-    cssrs_citation: "C-SSRS: Columbia University. सार्वजनिक डोमेन.",
-    audit_title: "भाग B — मद्यपान (AUDIT-C)",
-    audit_note: "तुम्ही कधीच दारू पीत नसाल तर 'कधीच नाही' निवडा — पुढचे प्रश्न वगळले जातील.",
-    audit_never_msg: "✓ पुष्टी झाली — मद्यपानाचे प्रश्न वगळले",
-    audit_citation: "AUDIT-C: WHO. सार्वजनिक डोमेन.",
-    yes: "होय", no: "नाही",
-  },
-};
-
-// ── PID-5-BF Domain mapping (which items map to which domain) ────
-// Items 1-5: Disinhibition, 6-10: Negative Affect, 11-15: Psychoticism (wrong order in APA)
-// APA PID-5-BF correct domain mapping:
-const PID5_DOMAIN_MAP = {
-  "Negative Affect":  [8,9,10,11,25],   // items 8,9,10,11,25
-  "Detachment":       [16,17,18,19,20],  // items 16,17,18,19,20
-  "Antagonism":       [13,14,15,4,7],    // items 13,14,15 + others
-  "Disinhibition":    [1,2,3,5,6],       // items 1,2,3,5,6
-  "Psychoticism":     [7,12,21,22,24],   // items 7,12,21,22,24
-};
-
-// Correct APA PID-5-BF scoring (Krueger et al., 2013)
-// Items per domain (1-indexed):
-// Negative Affect:  7,8,9,10,25
-// Detachment:       15,16,17,18,19
-// Antagonism:       11,12,13,14,20
-// Disinhibition:    1,2,3,4,5
-// Psychoticism:     6,21,22,23,24
-const PID5_DOMAINS_ITEMS = {
-  "Disinhibition":   [1,2,3,4,5],
-  "Negative Affect": [7,8,9,10,25],
-  "Psychoticism":    [6,21,22,23,24],
-  "Detachment":      [15,16,17,18,19],
-  "Antagonism":      [11,12,13,14,20],
-};
-
-function scorePID5(resp) {
-  const result = {};
-  Object.entries(PID5_DOMAINS_ITEMS).forEach(([domain, items]) => {
-    const scores = items.map(i => resp[`pid${i}`] !== undefined ? resp[`pid${i}`] : 0);
-    result[domain] = parseFloat((scores.reduce((a,b)=>a+b,0) / items.length).toFixed(2));
-  });
-  // DSM-5 Cluster alignment
-  const clusterA = ((result["Detachment"] || 0) + (result["Psychoticism"] || 0)) / 2;
-  const clusterB = ((result["Antagonism"] || 0) + (result["Disinhibition"] || 0)) / 2;
-  const clusterC = result["Negative Affect"] || 0;
-  const clusters = { A: clusterA.toFixed(2), B: clusterB.toFixed(2), C: clusterC.toFixed(2) };
-  const dominant = clusterA >= clusterB && clusterA >= clusterC ? "Cluster A (Schizoid/Schizotypal/Paranoid)" :
-                   clusterB >= clusterC ? "Cluster B (Borderline/Narcissistic/Antisocial)" :
-                   "Cluster C (Avoidant/Dependent/OCPD)";
-  return { domains: result, clusters, dominant };
-}
-
-function scoreWHO5(resp) {
-  const total = [1,2,3,4,5].reduce((a,i) => a + (resp[`who${i}`] !== undefined ? resp[`who${i}`] : 0), 0);
-  const pct = total * 4;
-  const level = pct >= 72 ? "Good" : pct >= 52 ? "Moderate" : pct >= 28 ? "Low" : "Poor";
-  const screenDepression = pct < 52 || resp["who1"] <= 1;
-  return { raw: total, score: pct, level, screenDepression };
-}
-
-function scoreRSES(resp) {
-  // Reverse-scored items: 3,5,8,9,10
-  const reversed = [3,5,8,9,10];
-  let total = 0;
-  for (let i = 1; i <= 10; i++) {
-    const v = resp[`rses${i}`] !== undefined ? resp[`rses${i}`] : 2;
-    total += reversed.includes(i) ? (5 - v) : v;
-  }
-  const level = total >= 30 ? "High Self-Esteem" :
-                total >= 25 ? "Normal Self-Esteem" :
-                total >= 15 ? "Moderate Self-Esteem" : "Low Self-Esteem";
-  return { score: total, max: 40, level };
-}
-
-function scorePHQ9(resp) {
-  const total = [1,2,3,4,5,6,7,8,9].reduce((a,i) => a + (resp[`phq${i}`] || 0), 0);
-  const level = total <= 4 ? "Minimal/None" : total <= 9 ? "Mild" :
-                total <= 14 ? "Moderate" : total <= 19 ? "Moderately Severe" : "Severe";
-  const color = total <= 4 ? "#10B981" : total <= 9 ? "#84CC16" :
-                total <= 14 ? "#F59E0B" : total <= 19 ? "#F97316" : "#EF4444";
-  return { score: total, level, color };
-}
-
-function scoreGAD7(resp) {
-  const total = [1,2,3,4,5,6,7].reduce((a,i) => a + (resp[`gad${i}`] || 0), 0);
-  const level = total <= 4 ? "Minimal" : total <= 9 ? "Mild" :
-                total <= 14 ? "Moderate" : "Severe";
-  const color = total <= 4 ? "#10B981" : total <= 9 ? "#84CC16" :
-                total <= 14 ? "#F59E0B" : "#EF4444";
-  return { score: total, level, color };
-}
-
+// ── SVG Shape Primitives for Raven's Visual Matrices ──────────────────────────
 const RvCircle = ({cx,cy,r=20,fill="none",stroke="#374151",sw=2.5}) =>
   <circle cx={cx} cy={cy} r={r} fill={fill} stroke={stroke} strokeWidth={sw}/>;
 const RvRect = ({cx,cy,s=38,fill="none",stroke="#374151",sw=2.5}) =>
@@ -1214,8 +665,6 @@ const SDQCP = [
   { q:"I take things that do not belong to me",           rev:false },
 ];
 
-
-// ── VALID: Scoring Helpers + Norms ───────────────────────────────
 // ─────────────── SCORING HELPERS ───────────────────────────────────────────
 
 const scoreBFI = (resp) => {
@@ -1270,24 +719,18 @@ const classPHQ = (score) => {
 
 const scoreCSS = (resp) => {
   const pos = Object.values(resp).filter(Boolean).length;
-  if (pos===0) return { score:0, level:0, label:"No ideation", color:"#10B981" };
-  if (pos<=1)  return { score:1, level:1, label:"Passive ideation", color:"#84CC16" };
-  if (pos<=2)  return { score:2, level:2, label:"Active ideation (no plan)", color:"#F59E0B" };
-  if (pos<=3)  return { score:3, level:3, label:"Ideation with plan", color:"#F97316" };
-  return       { score:4, level:4, label:"Intent with rehearsal", color:"#EF4444" };
+  if (pos===0) return { level:0, label:"No ideation", color:"#10B981" };
+  if (pos<=1)  return { level:1, label:"Passive ideation", color:"#84CC16" };
+  if (pos<=2)  return { level:2, label:"Active ideation (no plan)", color:"#F59E0B" };
+  if (pos<=3)  return { level:3, label:"Ideation with plan", color:"#F97316" };
+  return              { level:4, label:"Intent with rehearsal", color:"#EF4444" };
 };
 
 const scoreAUDIT = (resp) => {
-  // Keys are "aud1","aud2","aud3" — map to AUDITC indices 0,1,2
-  const keyMap = { aud1:0, aud2:1, aud3:2 };
-  const s = Object.entries(resp).reduce((a,[k,v]) => {
-    const idx = keyMap[k];
-    if (idx === undefined || v === undefined || v === null) return a;
-    return a + (AUDITC[idx]?.sc?.[v] ?? 0);
-  }, 0);
-  if (s<=3)  return { score:s, level:0, label:"Low risk", color:"#10B981" };
-  if (s<=7)  return { score:s, level:1, label:"Hazardous use", color:"#F59E0B" };
-  return     { score:s, level:2, label:"Harmful / Dependent", color:"#EF4444" };
+  const s = Object.entries(resp).reduce((a,[k,v]) => a + AUDITC[parseInt(k)].sc[v], 0);
+  if (s<=3)  return { score:s, label:"Low risk", color:"#10B981" };
+  if (s<=7)  return { score:s, label:"Hazardous use", color:"#F59E0B" };
+  return          { score:s, label:"Harmful / Dependent", color:"#EF4444" };
 };
 
 // ── Age-adjusted normative ranges ────────────────────────────────────────────
@@ -1325,7 +768,30 @@ const getAgeNorms = (age) => {
   };
 };
 
-const generateLocalUID = (mobile, dob, gender) => {
+// ── FileNo / Registration helpers ────────────────────────────────────────────
+// Reads ?reg= from the URL so CIBS can pre-fill via a sent link
+const getURLParam = (key) => {
+  try { return new URLSearchParams(window.location.search).get(key) || ""; }
+  catch { return ""; }
+};
+
+// Auto-generate a FileNo when none is provided (walk-in / self-referred)
+const autoFileNo = () => {
+  const yy = String(new Date().getFullYear()).slice(-2);
+  const rand = String(Math.floor(Math.random()*9000)+1000);
+  return `CIBS-${yy}-${rand}`;
+};
+
+// Calculate age from DOB string (YYYY-MM-DD)
+const calcAge = (dob) => {
+  if (!dob) return "";
+  const d = new Date(dob), now = new Date();
+  let age = now.getFullYear() - d.getFullYear();
+  if (now < new Date(now.getFullYear(), d.getMonth(), d.getDate())) age--;
+  return age > 0 ? String(age) : "";
+};
+
+const generateUID = (mobile, dob, gender) => {
   const last6 = (mobile||"").replace(/\D/g,"").slice(-6).padStart(6,"0");
   const now = new Date();
   const dd = String(now.getDate()).padStart(2,"0");
@@ -1335,10 +801,9 @@ const generateLocalUID = (mobile, dob, gender) => {
   return `SC-${last6}-${dd}${mm}${yy}-${g}`;
 };
 
-
-// ── VALID: UI Atoms ───────────────────────────────────────────────
 // ─────────────── TINY UI ATOMS ─────────────────────────────────────────────
 
+const cx = (...args) => args.filter(Boolean).join(" ");
 
 const Pill = ({ children, color="#3B82F6" }) => (
   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold"
@@ -1378,8 +843,70 @@ const SectionHead = ({ icon, title, color="#1A2E4A", badge }) => (
 // ─────────────── SCREENS ───────────────────────────────────────────────────
 
 // ════ WELCOME ════════════════════════════════════════════════════════════════
+const Welcome = ({ onSelf, onClinician }) => (
+  <div className="min-h-screen flex flex-col" style={{
+    background: "linear-gradient(160deg, #0F1E30 0%, #1A2E4A 50%, #0F1E30 100%)"
+  }}>
+    <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+      {/* Branding */}
+      <div className="relative mb-8">
+        <div className="w-20 h-20 rounded-3xl mx-auto flex items-center justify-center mb-4 shadow-2xl"
+          style={{ background: "rgba(139,92,246,0.25)", border: "1px solid rgba(139,92,246,0.5)" }}>
+          <span className="text-4xl">📋</span>
+        </div>
+        <div className="absolute -top-1 -right-8 w-6 h-6 rounded-full bg-green-400 animate-pulse opacity-75"/>
+      </div>
 
-// ── VALID: Eligibility Screener ──────────────────────────────────
+      <h1 className="text-4xl font-black text-white mb-1 tracking-tight">CIBS-VALID</h1>
+      <p className="text-purple-300 font-semibold mb-1 text-sm">
+        Validation & Assessment of Longitudinal Instrument Diagnostics
+      </p>
+      <p className="text-purple-500 text-xs mb-8">
+        Central Institute of Behavioural Sciences · Nagpur · v 1.0
+      </p>
+
+      {/* Domain chips */}
+      <div className="flex flex-wrap gap-2 justify-center mb-8 max-w-xs">
+        {[
+          { d:"D1", label:"Cognition",   color:"#3B82F6" },
+          { d:"D2", label:"Personality", color:"#8B5CF6" },
+          { d:"D3", label:"Health",      color:"#10B981" },
+          { d:"D4", label:"Depression",  color:"#F59E0B" },
+          { d:"D5", label:"Risk",        color:"#EF4444" },
+        ].map(x => (
+          <span key={x.d} className="px-3 py-1 rounded-full text-xs font-bold"
+            style={{ background: x.color + "25", color: x.color, border: `1px solid ${x.color}44` }}>
+            {x.d} · {x.label}
+          </span>
+        ))}
+      </div>
+
+      <p className="text-purple-400 text-xs mb-8">
+        5 domains · ~58 items · 20–25 minutes
+      </p>
+
+      {/* Mode selection */}
+      <div className="w-full max-w-sm space-y-3">
+        <button onClick={onSelf}
+          className="w-full py-4 rounded-2xl font-black text-white text-base shadow-lg transition-all active:scale-98"
+          style={{ background: "linear-gradient(135deg, #8B5CF6, #6D28D9)" }}>
+          Self-Assessment
+          <span className="block text-purple-200 text-xs font-normal mt-0.5">For literate, tech-savvy individuals</span>
+        </button>
+        <button onClick={onClinician}
+          className="w-full py-4 rounded-2xl font-black text-white text-base shadow-lg"
+          style={{ background: "linear-gradient(135deg, #1D4ED8, #1A2E4A)" }}>
+          Clinician-Assisted Mode
+          <span className="block text-blue-200 text-xs font-normal mt-0.5">Examiner reads aloud · Any literacy level</span>
+        </button>
+      </div>
+    </div>
+    <p className="text-center text-purple-600 text-xs pb-4 px-4">
+      PI: Dr Shailesh V. Pangaonkar · CIBS Nagpur · +91 9423105228
+    </p>
+  </div>
+);
+
 // ════ ELIGIBILITY (3-step) ════════════════════════════════════════════════
 const Eligibility = ({ onResult }) => {
   const [step, setStep] = useState(0);
@@ -1546,8 +1073,88 @@ const TwoStepTask = ({ onDone, stepIndex, totalSteps }) => {
   );
 };
 
+// ════ CONSENT ════════════════════════════════════════════════════════════════
+const Consent = ({ mode, onConsent }) => {
+  const [ticked, setTicked] = useState({});
+  const stmts = [
+    "I confirm that this form has been read to me (or I have read it myself) in a language I understand.",
+    "I understand that my participation is entirely voluntary and I can stop at any time without any consequence.",
+    "I understand that no personal identifiers will be stored in the database — only an anonymous UID.",
+    "I understand that anonymised group data may be used in scientific publications and I will not be identifiable.",
+    "I agree to complete the CIBS-VALID assessment battery today and receive a personalised report.",
+    "I understand that if any elevated risk is identified, I may be offered — but am not obliged to accept — further support.",
+  ];
+  const allTicked = stmts.every((_, i) => ticked[i]);
 
-// ── VALID: Domain Meta + Assessment Container ────────────────────
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className="bg-white border-b px-4 py-3 sticky top-0 z-10">
+        <p className="text-xs font-black text-center text-gray-700">Informed Consent</p>
+        <p className="text-xs text-center text-gray-400">
+          {mode==="self" ? "Self-Administration" : "Clinician-Assisted Mode"}
+        </p>
+      </div>
+      <div className="p-4 max-w-sm mx-auto space-y-4 pb-8">
+        <div className="rounded-2xl p-4" style={{ background:"#EFF6FF", border:"1.5px solid #BFDBFE" }}>
+          <p className="text-xs font-bold text-blue-700 mb-1">Ethics Approval Note</p>
+          <p className="text-xs text-blue-800">
+            This study has been submitted to the Ethics Committee of Dr Rinki Rughwani Children Hospital,
+            Nagpur. EC reference and date will be inserted on formal approval. For any concern about
+            participant rights, contact the EC directly at the hospital.
+          </p>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-gray-200 p-4">
+          <p className="text-sm font-bold text-gray-800 mb-2">About This Assessment</p>
+          <p className="text-xs text-gray-600 leading-relaxed">
+            CIBS-VALID is a multi-domain mental health assessment battery developed by
+            Central Institute of Behavioural Sciences (CIBS), Nagpur. It consists of
+            5 validated domains covering cognitive function, personality, physical and
+            mental health, depression screening, and risk factor profiling.
+            <br/><br/>
+            <strong>Duration:</strong> ~20–25 minutes. &nbsp;
+            <strong>Format:</strong> Multiple-choice questions only.&nbsp;
+            <strong>No physical procedures.</strong>
+          </p>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-gray-200 p-4">
+          <p className="text-sm font-bold text-gray-800 mb-3">Please confirm each statement:</p>
+          <div className="space-y-3">
+            {stmts.map((s, i) => (
+              <label key={i} className="flex items-start gap-3 cursor-pointer"
+                onClick={() => setTicked(t => ({ ...t, [i]: !t[i] }))}>
+                <div className={cx(
+                  "mt-0.5 flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-all",
+                  ticked[i] ? "bg-purple-600 border-purple-600" : "border-gray-300"
+                )}>
+                  {ticked[i] && <span className="text-white text-xs font-bold">✓</span>}
+                </div>
+                <p className="text-xs text-gray-600 leading-relaxed select-none">{s}</p>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        {mode==="assisted" && (
+          <div className="rounded-2xl p-3" style={{ background:"#FFFBEB", border:"1.5px solid #FCD34D" }}>
+            <p className="text-xs text-amber-800">
+              <strong>Examiner note:</strong> Please read all questions aloud. Record responses on the participant's behalf.
+              Verbal consent has been obtained and noted in the examiner log.
+            </p>
+          </div>
+        )}
+
+        <button onClick={onConsent} disabled={!allTicked}
+          className="w-full py-4 rounded-2xl font-black text-white text-base disabled:opacity-40"
+          style={{ background: allTicked ? "linear-gradient(135deg,#8B5CF6,#6D28D9)" : "#9CA3AF" }}>
+          I Consent — Begin CIBS-VALID →
+        </button>
+      </div>
+    </div>
+  );
+};
+
 // ════ DOMAIN NAVIGATOR ═══════════════════════════════════════════════════════
 const DOMAIN_META = [
   { id:1, code:"D1", name:"Cognition",   color:"#3B82F6", bg:"#EFF6FF", icon:"🧩", count:22 },
@@ -1575,10 +1182,10 @@ const Assessment = ({ mode, onComplete }) => {
     return Math.round(done/total*100);
   };
   const allDone = DOMAIN_META.every(m => complete(m.id));
-  const cd = DOMAIN_META[Math.min(domain,DOMAIN_META.length)-1];
+  const cd = DOMAIN_META[domain-1];
 
   const nextDomain = () => {
-    if (domain < DOMAIN_META.length) { setDomain(d=>d+1); scrollRef.current?.scrollTo(0,0); }
+    if (domain < 5) { setDomain(d=>d+1); scrollRef.current?.scrollTo(0,0); }
     else onComplete(resp);
   };
 
@@ -1642,7 +1249,7 @@ const Assessment = ({ mode, onComplete }) => {
             <button onClick={nextDomain}
               className="w-full py-4 rounded-2xl font-black text-white text-sm"
               style={{ background: `linear-gradient(135deg,${cd.color},${cd.color}cc)` }}>
-              {domain < DOMAIN_META.length ? `Continue → ${DOMAIN_META[domain].name}` : "Complete Assessment ✅"}
+              {domain < 4 ? `Continue → ${DOMAIN_META[domain].name}` : "Complete Assessment ✅"}
             </button>
           )}
         </div>
@@ -1651,7 +1258,6 @@ const Assessment = ({ mode, onComplete }) => {
   );
 };
 
-// ── VALID: Domain Components (Cognition, Personality, Health, Risk)
 // ════ DOMAIN 1 — COGNITION (Adaptive CAT Engine) ══════════════════════════════
 const BAND_LABELS = {
   1:"Foundation Level", 2:"Standard Level", 3:"Advanced Level", 4:"Exceptional Level"
@@ -1834,7 +1440,7 @@ const DomainCognition = ({ set, color, bg }) => {
         </div>
         <div className="rounded-xl p-3 text-xs text-center text-gray-400"
           style={{background:"#F8FAFC",border:"1px solid #E2E8F0"}}>
-          ✅ Cognitive section complete — scroll down and continue to the next section
+          Tap <strong>"Continue → Personality"</strong> below to proceed
         </div>
       </div>
     );
@@ -2237,19 +1843,16 @@ const DomainRisk = ({ resp, set, color, bg, mode }) => (
       );
     })}
 
-    {/* AUDIT-C — Q2 and Q3 skipped if Q1 = Never */}
+    {/* AUDIT-C */}
     <p className="text-xs font-black text-gray-500 uppercase tracking-wider px-1 mt-2">Part B — Alcohol Screen (AUDIT-C)</p>
     {AUDITC.map((item, i) => {
       const val = resp[`aud${i+1}`];
-      const q1Never = resp["aud1"] === 0;
-      if (i > 0 && q1Never) return null;
       return (
         <div key={i} className="bg-white rounded-2xl border border-gray-200 p-4">
           <p className="text-sm text-gray-700 mb-2">{item.q}</p>
-          {i === 0 && <p className="text-xs text-gray-400 mb-2 italic">If you never drink alcohol, select "Never" — further questions will be skipped.</p>}
           <div className="space-y-1.5">
             {item.opts.map((opt, j) => (
-              <button key={j} onClick={() => { set(`aud${i+1}`, j); if(j===0 && i===0){set("aud2",0);set("aud3",0);} }}
+              <button key={j} onClick={() => set(`aud${i+1}`, j)}
                 className={cx("w-full text-left py-2 px-3 rounded-xl text-xs border-2 transition-all",
                   val===j ? "border-orange-500 bg-orange-50 text-orange-700 font-bold" : "border-gray-200 text-gray-600")}>
                 {opt}
@@ -2259,12 +1862,6 @@ const DomainRisk = ({ resp, set, color, bg, mode }) => (
         </div>
       );
     })}
-    {resp["aud1"] === 0 && (
-      <div className="bg-green-50 border border-green-200 rounded-2xl p-3">
-        <p className="text-sm text-green-700 font-bold">✓ Non-drinker confirmed — alcohol questions skipped</p>
-        <p className="text-xs text-green-600 mt-1">AUDIT-C score recorded as 0</p>
-      </div>
-    )}
 
     {/* SDQ-CP */}
     <p className="text-xs font-black text-gray-500 uppercase tracking-wider px-1 mt-2">Part C — Conduct Profile (SDQ-CP)</p>
@@ -2288,9 +1885,295 @@ const DomainRisk = ({ resp, set, color, bg, mode }) => (
   </div>
 );
 
-// ════ DEMOGRAPHICS ════════════════════════════════════════════════════════════
+// ════ DEMOGRAPHICS — UNIFIED (same structure for all CIBS tools) ══════════════
+const EDUCATION_OPTS = ["No formal education","Primary (up to Std 5)","Secondary (Std 6–10)","Higher Secondary (Std 11–12)","Graduate","Post-Graduate","Doctorate","Other"];
+const REFERRAL_OPTS  = ["OPD / Walk-in","Referred by physician","Referred by school/college","Self-referred","Research study","Community screening","Other"];
 
-// ── VALID: Alert Components + Wellbeing Report ───────────────────
+const Demographics = ({ onComplete, mode }) => {
+  // Pre-fill FileNo from URL if CIBS sent a link like cibs-valid.vercel.app?reg=CIBS-26-0001
+  const urlReg      = getURLParam("reg");
+  const urlAssessor = getURLParam("assessor");
+
+  const [form, setForm] = useState({
+    fileNo:    urlReg || "",          // Registration / FileNo — primary key
+    name:      "",
+    dob:       "",                    // Date of birth — age auto-calculated
+    gender:    "",
+    mobile:    "",
+    email:     "",
+    education: "",
+    occupation:"",
+    referral:  "",
+    assessor:  urlAssessor || "",     // Clinician / assessor name
+    notes:     "",                    // Optional clinical notes
+  });
+  const set = (k,v) => setForm(p => ({ ...p, [k]: v }));
+
+  const ageFromDOB  = calcAge(form.dob);
+  const displayAge  = ageFromDOB || "";
+  const fileNoFinal = form.fileNo.trim() || autoFileNo();
+  const uid         = generateUID(form.mobile, form.dob, form.gender);
+
+  // Require at least: FileNo (or auto) + DOB + gender
+  const canProceed  = form.dob !== "" && form.gender !== "";
+
+  const InputField = ({ k, label, placeholder, type="text", maxLen, readOnly }) => (
+    <div>
+      <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+      <input value={form[k]} onChange={e => set(k, e.target.value)}
+        placeholder={placeholder} type={type} maxLength={maxLen} readOnly={readOnly}
+        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-purple-500"
+        style={readOnly ? {background:"#F5F3FF", color:"#6D28D9", fontWeight:700} : {}}/>
+    </div>
+  );
+
+  const SelectField = ({ k, label, opts }) => (
+    <div>
+      <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+      <select value={form[k]} onChange={e => set(k, e.target.value)}
+        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-purple-500 bg-white">
+        <option value="">— Select —</option>
+        {opts.map(o => <option key={o} value={o}>{o}</option>)}
+      </select>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className="bg-white border-b px-4 py-3 sticky top-0 z-10">
+        <p className="text-xs font-black text-center text-gray-700">Registration & Demographics</p>
+        <p className="text-xs text-center text-gray-400">CIBS-VALID · Patient record — kept strictly confidential</p>
+      </div>
+
+      <div className="p-4 max-w-sm mx-auto space-y-4 pb-10">
+
+        {/* FileNo banner */}
+        <div className="rounded-2xl p-4" style={{background:"#F5F3FF", border:"1.5px solid #DDD6FE"}}>
+          <p className="text-xs font-black text-purple-700 mb-1">Registration Number (FileNo)</p>
+          {urlReg ? (
+            <>
+              <p className="text-xl font-mono font-black text-purple-800">{urlReg}</p>
+              <p className="text-xs text-purple-500 mt-0.5">Pre-filled by CIBS — this links your records across all tests</p>
+            </>
+          ) : (
+            <>
+              <input value={form.fileNo} onChange={e=>set("fileNo",e.target.value)}
+                placeholder="e.g. CIBS-26-0001  (or leave blank to auto-generate)"
+                className="w-full border border-purple-300 rounded-xl px-3 py-2 text-sm font-mono outline-none focus:border-purple-600 bg-white mt-1"/>
+              <p className="text-xs text-purple-400 mt-1">Leave blank — a unique number will be created automatically</p>
+            </>
+          )}
+        </div>
+
+        {/* Personal details */}
+        <p className="text-xs font-black text-gray-500 uppercase tracking-wider">Personal Details</p>
+
+        <InputField k="name" label="Full Name (optional — leave blank to stay anonymous)" placeholder="Anonymous"/>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Date of Birth ★</label>
+          <input type="date" value={form.dob} onChange={e=>set("dob",e.target.value)}
+            max={new Date().toISOString().split("T")[0]}
+            className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-purple-500"/>
+          {displayAge && (
+            <p className="text-xs text-purple-600 mt-1 font-bold">Age: {displayAge} years</p>
+          )}
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Gender ★</label>
+          <div className="grid grid-cols-4 gap-1.5">
+            {["Male","Female","Other","Prefer not to say"].map(g => (
+              <button key={g} onClick={()=>set("gender",g)}
+                className={cx("py-2 rounded-xl text-xs font-semibold border-2 transition-all",
+                  form.gender===g ? "border-purple-500 bg-purple-50 text-purple-700" : "border-gray-200 text-gray-400")}>
+                {g==="Prefer not to say"?"NSD":g}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <InputField k="mobile" label="Mobile Number (10 digits)" placeholder="9876543210" type="tel" maxLen={10}/>
+        <InputField k="email"  label="Email (optional — to receive report)" placeholder="you@email.com" type="email"/>
+
+        {/* Background */}
+        <p className="text-xs font-black text-gray-500 uppercase tracking-wider pt-1">Background</p>
+        <SelectField k="education" label="Highest Education Level"    opts={EDUCATION_OPTS}/>
+        <InputField  k="occupation" label="Occupation (optional)"     placeholder="e.g. Farmer, Teacher, Student"/>
+        <SelectField k="referral"  label="How did you come here?"     opts={REFERRAL_OPTS}/>
+
+        {/* Assessor — always shown (filled by clinician in assisted mode) */}
+        <p className="text-xs font-black text-gray-500 uppercase tracking-wider pt-1">Clinical</p>
+        <InputField k="assessor" label="Assessor / Clinician Name" placeholder="Dr. Pangaonkar"/>
+        <InputField k="notes"    label="Clinical Notes / Chief Complaint (optional)" placeholder="Brief note…"/>
+
+        {/* UID preview */}
+        {canProceed && (
+          <div className="rounded-xl p-3" style={{background:"#F0FDF4", border:"1px solid #86EFAC"}}>
+            <p className="text-xs font-bold text-green-700 mb-0.5">Anonymous UID (auto-generated)</p>
+            <p className="text-sm font-mono font-black text-green-800">{uid}</p>
+            <p className="text-xs text-green-600 mt-0.5">FileNo: <strong>{fileNoFinal}</strong> · Age: {displayAge} yrs · {form.gender}</p>
+          </div>
+        )}
+
+        <button onClick={() => onComplete({ ...form, fileNo: fileNoFinal, age: displayAge || form.dob, uid })}
+          disabled={!canProceed}
+          className="w-full py-4 rounded-2xl font-black text-white text-base disabled:opacity-40"
+          style={{ background: canProceed ? "linear-gradient(135deg,#8B5CF6,#6D28D9)" : "#9CA3AF" }}>
+          Generate My Report →
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ════ REPORT ══════════════════════════════════════════════════════════════════
+const Report = ({ responses, demographics, mode }) => {
+  const [tab, setTab] = useState(mode==="self" ? "wellbeing" : "clinical");
+  const [printing, setPrinting] = useState(false);
+  const reportRef = useRef(null);
+
+  // --- Compute scores ---
+  const bfi   = scoreBFI(responses.d2);
+  const duke  = scoreDuke(responses.d3);
+  const cssCl = scoreCSS(Object.fromEntries(
+    CSSRS.map((_,i) => [`css${i+1}`, responses.d4[`css${i+1}`]])
+  ));
+  const audCl = scoreAUDIT(Object.fromEntries(
+    AUDITC.map((_,i) => [`${i}`, responses.d4[`aud${i+1}`] !== undefined ? responses.d4[`aud${i+1}`] : 0])
+  ));
+  const catResult   = scoreCAT(responses.d1);
+  const ravensScore = catResult.totalCorrect;
+  const ravensIQ    = catResult.iq;
+  const ravensLabel = catResult.label;
+  const ageNorms    = getAgeNorms(demographics?.age);
+
+  const today = new Date().toLocaleDateString("en-IN",{day:"2-digit",month:"long",year:"numeric"});
+
+  // ── Push data to Google Sheets once on report load ─────────────────────────
+  useEffect(() => {
+    if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.startsWith("PASTE_")) return;
+    const sdqTotal = SDQCP.reduce((sum, item, i) => {
+      const v = responses.d4[`sdq${i+1}`];
+      return sum + (v !== undefined ? (item.rev ? 2 - v : v) : 0);
+    }, 0);
+    const payload = {
+      tool:            "CIBS-VALID",
+      timestamp:       new Date().toISOString(),
+      mode:            mode,
+      // Universal identification
+      fileNo:          demographics.fileNo      || "",
+      uid:             demographics.uid         || "",
+      // Universal demographics
+      name:            demographics.name        || "Anonymous",
+      dob:             demographics.dob         || "",
+      age:             demographics.age         || "",
+      gender:          demographics.gender      || "",
+      mobile:          demographics.mobile      || "",
+      email:           demographics.email       || "",
+      education:       demographics.education   || "",
+      occupation:      demographics.occupation  || "",
+      referral:        demographics.referral    || "",
+      assessor:        demographics.assessor    || "",
+      notes:           demographics.notes       || "",
+      // D1 — Cognition
+      cq_iq:           catResult.iq,
+      cq_ma:           catResult.ma,
+      cq_label:        catResult.label,
+      cq_percentile:   catResult.pctRank,
+      cq_correct:      catResult.totalCorrect,
+      // D2 — Personality (BFI-10)
+      bfi_O:           bfi.O,
+      bfi_C:           bfi.C,
+      bfi_E:           bfi.E,
+      bfi_A:           bfi.A,
+      bfi_N:           bfi.N,
+      // D3 — Health (Duke-17)
+      duke_general:    duke.general,
+      duke_phys:       duke.phys,
+      duke_mental:     duke.mental,
+      duke_social:     duke.social,
+      duke_depression: duke.depression,
+      duke_anxiety:    duke.anxiety,
+      duke_selfEsteem: duke.selfEsteem,
+      // D4 — Risk
+      cssrs_level:     cssCl.level,
+      cssrs_label:     cssCl.label,
+      auditc_score:    audCl.score,
+      auditc_label:    audCl.label,
+      sdq_total:       sdqTotal,
+    };
+    fetch(APPS_SCRIPT_URL, {
+      method:  "POST",
+      mode:    "no-cors",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify(payload),
+    }).catch(() => {}); // silent fail — report still shows
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handlePrint = () => {
+    setPrinting(true);
+    setTimeout(() => { window.print(); setPrinting(false); }, 200);
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50" ref={reportRef}>
+      {/* Header bar */}
+      <div className="bg-white border-b px-4 py-3 print:hidden sticky top-0 z-20">
+        <div className="flex items-center justify-between max-w-sm mx-auto">
+          <p className="text-xs font-black text-gray-700">CIBS-VALID Report</p>
+          <div className="flex gap-2">
+            {["wellbeing","clinical"].map(t => (
+              <button key={t} onClick={()=>setTab(t)}
+                className={cx("text-xs px-3 py-1.5 rounded-lg font-bold border transition-all",
+                  tab===t ? "bg-purple-600 text-white border-purple-600" : "border-gray-200 text-gray-500 bg-white")}>
+                {t==="wellbeing"?"Wellbeing":"Clinical"}
+              </button>
+            ))}
+            <button onClick={handlePrint}
+              className="text-xs px-3 py-1.5 rounded-lg font-bold bg-gray-800 text-white">
+              {printing?"...":"PDF"}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-sm mx-auto p-4 pb-12 space-y-4">
+        {/* Subject banner */}
+        <div className="rounded-2xl p-4 text-white"
+          style={{ background:"linear-gradient(135deg,#1A2E4A,#243B58)" }}>
+          <div className="flex justify-between items-start">
+            <div>
+              <p className="text-xs text-blue-300 mb-0.5">CIBS-VALID Assessment Report</p>
+              <p className="text-base font-black">{demographics.name || "Anonymous Participant"}</p>
+              <p className="text-xs text-blue-300">
+                {demographics.age ? `Age ${demographics.age}` : ""}
+                {demographics.gender ? ` · ${demographics.gender}` : ""}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-blue-300">UID</p>
+              <p className="text-xs font-mono font-black">{demographics.uid}</p>
+              <p className="text-xs text-blue-400 mt-0.5">{today}</p>
+            </div>
+          </div>
+        </div>
+
+        {tab === "wellbeing" && <WellbeingReport bfi={bfi} duke={duke} cssCl={cssCl} audCl={audCl} ravensScore={ravensScore} ravensLabel={ravensLabel} catResult={catResult} ageNorms={ageNorms} demographics={demographics}/>}
+        {tab === "clinical"  && <ClinicalReport  bfi={bfi} duke={duke} cssCl={cssCl} audCl={audCl} ravensScore={ravensScore} ravensIQ={ravensIQ} ravensLabel={ravensLabel} responses={responses} mode={mode} demographics={demographics} catResult={catResult} ageNorms={ageNorms}/>}
+
+        {/* Footer */}
+        <div className="rounded-xl p-3 text-center" style={{ background:"#F8FAFC", border:"1px solid #E2E8F0" }}>
+          <p className="text-xs text-gray-400">
+            Central Institute of Behavioural Sciences (CIBS), Nagpur<br/>
+            Dr Shailesh V. Pangaonkar · +91 9423105228 · pangaonkar11@gmail.com<br/>
+            This report is for informational purposes only and does not constitute a clinical diagnosis.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // ─── Red Flag Alert Component ────────────────────────────────────────────────
 const RedFlag = ({ title, body, helplines }) => (
@@ -2651,9 +2534,7 @@ const WellbeingReport = ({ bfi, duke, cssCl, audCl, ravensScore, ravensLabel, ca
 // ══════════════════════════════════════════════════════════════════════════════
 // CLINICAL REPORT — Lab-style, formal, structured for clinician use
 // ══════════════════════════════════════════════════════════════════════════════
-
-// ── VALID: Clinical Report Component ─────────────────────────────
-const ValidClinicalReport = ({ bfi, duke, cssCl, audCl, ravensScore, ravensIQ, ravensLabel, responses, mode, demographics, catResult, ageNorms }) => {
+const ClinicalReport = ({ bfi, duke, cssCl, audCl, ravensScore, ravensIQ, ravensLabel, responses, mode, demographics, catResult, ageNorms }) => {
 
   const sdqTotal = SDQCP.reduce((s,item,i) => {
     const v = responses.d4[`sdq${i+1}`] || 0;
@@ -3126,988 +3007,36 @@ const ValidClinicalReport = ({ bfi, duke, cssCl, audCl, ravensScore, ravensIQ, r
   );
 };
 
+// ═══════════════════════════ MAIN APP ════════════════════════════════════════
 
-// ══════════════════════════════════════════════════════════════════
-// ║  UNIFIED: Landing, Bridge, Demographics, Combined Report      ║
-// ══════════════════════════════════════════════════════════════════
+export default function CIBSValid() {
+  const [screen, setScreen] = useState("welcome"); // welcome → eligibility → consent → assessment → demographics → report
+  const [mode, setMode] = useState("self");
+  const [responses, setResponses] = useState(null);
+  const [demographics, setDemographics] = useState(null);
 
-// ── Landing Page ─────────────────────────────────────────────────
-// ══════════════════════════════════════════════════════════════════════════════
-//  DOMAIN 2 — PERSONALITY (BFI-10 + PID-5-BF)
-// ══════════════════════════════════════════════════════════════════════════════
-const DomainPersonalityFull = ({ resp, set, t }) => {
-  const answered_bfi = [1,2,3,4,5,6,7,8,9,10].filter(i => resp[`bfi${i}`] !== undefined).length;
-  const answered_pid = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25].filter(i => resp[`pid${i}`] !== undefined).length;
-  const total_answered = answered_bfi + answered_pid;
-  const total_items = 35;
+  const startFlow = (m) => { setMode(m); setScreen("eligibility"); };
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-xl p-3 text-xs text-center font-semibold" style={{background:"#f5f3ff", color:"#6d28d9"}}>
-        {t.bfi_intro}<br/><span className="font-normal">{t.bfi_scale}</span>
-      </div>
+    <div className="font-sans">
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700;900&family=DM+Mono:wght@400;500&display=swap');
+        * { font-family: 'DM Sans', sans-serif; }
+        .font-mono { font-family: 'DM Mono', monospace; }
+        @media print {
+          .print\\:hidden { display: none !important; }
+          body { background: white; }
+        }
+        button:active { transform: scale(0.97); }
+      `}</style>
 
-      {/* BFI-10 */}
-      <p className="text-xs font-black text-purple-500 uppercase tracking-wider px-1">
-        Part A — Big Five Inventory (BFI-10) · {answered_bfi}/10
-      </p>
-      {(t.bfi_items||[]).map((item, i) => {
-        const val = resp[`bfi${i+1}`];
-        return (
-          <div key={i} className="bg-white rounded-2xl border border-gray-200 p-4">
-            <p className="text-sm text-gray-700 mb-3">{i+1}. {item}</p>
-            <div className="flex gap-1.5">
-              {[1,2,3,4,5].map(v => (
-                <button key={v} onClick={() => set(`bfi${i+1}`, v)}
-                  className={cx("flex-1 py-2.5 rounded-xl text-sm font-bold border-2 transition-all",
-                    val===v ? "border-purple-500 bg-purple-50 text-purple-700" : "border-gray-200 text-gray-400")}>
-                  {v}
-                </button>
-              ))}
-            </div>
-            <div className="flex justify-between text-xs text-gray-400 mt-1 px-1">
-              <span>Strongly Disagree</span>
-              <span>Strongly Agree</span>
-            </div>
-          </div>
-        );
-      })}
-
-      {/* PID-5-BF */}
-      <div className="rounded-xl p-3 text-xs text-center font-semibold mt-4" style={{background:"#fef3c7", color:"#92400e"}}>
-        {t.pid5_intro}<br/><span className="font-normal">{t.pid5_scale}</span>
-      </div>
-      <p className="text-xs font-black text-yellow-600 uppercase tracking-wider px-1">
-        Part B — DSM-5 Personality (PID-5-BF) · {answered_pid}/25
-      </p>
-      {(t.pid5_items||[]).map((item, i) => {
-        const val = resp[`pid${i+1}`];
-        return (
-          <div key={i} className="bg-white rounded-2xl border border-gray-200 p-4">
-            <p className="text-sm text-gray-700 mb-3">{i+1}. {item}</p>
-            <div className="flex gap-1.5">
-              {[0,1,2,3].map(v => (
-                <button key={v} onClick={() => set(`pid${i+1}`, v)}
-                  className={cx("flex-1 py-2.5 rounded-xl text-sm font-bold border-2 transition-all",
-                    val===v ? "border-yellow-500 bg-yellow-50 text-yellow-700" : "border-gray-200 text-gray-400")}>
-                  {v}
-                </button>
-              ))}
-            </div>
-            <div className="flex justify-between text-xs text-gray-400 mt-1 px-1">
-              <span>Very False</span><span>Very True</span>
-            </div>
-          </div>
-        );
-      })}
-      <p className="text-xs text-gray-400 text-center">PID-5-BF: © APA 2013. Free for researchers and clinicians.</p>
-    </div>
-  );
-};
-
-// ══════════════════════════════════════════════════════════════════════════════
-//  DOMAIN 3 — HEALTH & WELLBEING (WHO-5 + PHQ-9 + GAD-7 + RSES)
-// ══════════════════════════════════════════════════════════════════════════════
-const DomainHealthFull = ({ resp, set, t }) => {
-  const scale04 = [0,1,2,3,4,5];
-  const scale03 = [0,1,2,3];
-  const scale14 = [1,2,3,4];
-  const scaleLabels03 = ["Not at all","Several days","More than half","Nearly every day"];
-
-  return (
-    <div className="space-y-4">
-
-      {/* WHO-5 */}
-      <div className="rounded-xl p-3 text-xs" style={{background:"#f0fdf4", border:"1px solid #86efac"}}>
-        <p className="font-bold text-green-700 mb-1">🌱 Part A — WHO-5 Wellbeing Index</p>
-        <p className="text-green-600">{t.who5_intro}</p>
-        <p className="text-green-500 mt-1">{t.who5_scale}</p>
-      </div>
-      {(t.who5_items||[]).map((item,i) => {
-        const val = resp[`who${i+1}`];
-        return (
-          <div key={i} className="bg-white rounded-2xl border border-gray-200 p-4">
-            <p className="text-sm text-gray-700 mb-3">{i+1}. {item}</p>
-            <div className="flex gap-1">
-              {scale04.map(v => (
-                <button key={v} onClick={() => set(`who${i+1}`, v)}
-                  className={cx("flex-1 py-2.5 rounded-xl text-sm font-bold border-2 transition-all",
-                    val===v ? "border-green-500 bg-green-50 text-green-700" : "border-gray-200 text-gray-400")}>
-                  {v}
-                </button>
-              ))}
-            </div>
-            <div className="flex justify-between text-xs text-gray-400 mt-1 px-1">
-              <span>At no time</span><span>All of the time</span>
-            </div>
-          </div>
-        );
-      })}
-      <p className="text-xs text-gray-400 text-center">{t.who5_citation}</p>
-
-      {/* PHQ-9 */}
-      <div className="rounded-xl p-3 text-xs mt-4" style={{background:"#eff6ff", border:"1px solid #bfdbfe"}}>
-        <p className="font-bold text-blue-700 mb-1">🧠 Part B — PHQ-9 Depression Scale</p>
-        <p className="text-blue-600">{t.phq9_intro}</p>
-        <p className="text-blue-500 mt-1">{t.phq9_scale}</p>
-      </div>
-      {(t.phq9_items||[]).map((item,i) => {
-        const val = resp[`phq${i+1}`];
-        return (
-          <div key={i} className="bg-white rounded-2xl border border-gray-200 p-4">
-            <p className="text-sm text-gray-700 mb-3">{i+1}. {item}</p>
-            <div className="flex gap-1.5">
-              {scale03.map((v,j) => (
-                <button key={v} onClick={() => set(`phq${i+1}`, v)}
-                  className={cx("flex-1 py-2 rounded-xl text-xs font-semibold border-2 transition-all",
-                    val===v ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-400")}>
-                  {v}
-                </button>
-              ))}
-            </div>
-            <div className="flex justify-between text-xs text-gray-400 mt-1 px-0.5">
-              {scaleLabels03.map((l,i) => <span key={i} className="text-center flex-1" style={{fontSize:9}}>{l}</span>)}
-            </div>
-          </div>
-        );
-      })}
-      <p className="text-xs text-gray-400 text-center">{t.phq9_citation}</p>
-
-      {/* GAD-7 */}
-      <div className="rounded-xl p-3 text-xs mt-4" style={{background:"#fff7ed", border:"1px solid #fed7aa"}}>
-        <p className="font-bold text-orange-700 mb-1">😰 Part C — GAD-7 Anxiety Scale</p>
-        <p className="text-orange-600">{t.gad7_intro}</p>
-      </div>
-      {(t.gad7_items||[]).map((item,i) => {
-        const val = resp[`gad${i+1}`];
-        return (
-          <div key={i} className="bg-white rounded-2xl border border-gray-200 p-4">
-            <p className="text-sm text-gray-700 mb-3">{i+1}. {item}</p>
-            <div className="flex gap-1.5">
-              {scale03.map(v => (
-                <button key={v} onClick={() => set(`gad${i+1}`, v)}
-                  className={cx("flex-1 py-2 rounded-xl text-xs font-semibold border-2 transition-all",
-                    val===v ? "border-orange-500 bg-orange-50 text-orange-700" : "border-gray-200 text-gray-400")}>
-                  {v}
-                </button>
-              ))}
-            </div>
-            <div className="flex justify-between text-xs text-gray-400 mt-1 px-0.5">
-              {scaleLabels03.map((l,i) => <span key={i} className="text-center flex-1" style={{fontSize:9}}>{l}</span>)}
-            </div>
-          </div>
-        );
-      })}
-      <p className="text-xs text-gray-400 text-center">{t.gad7_citation}</p>
-
-      {/* RSES */}
-      <div className="rounded-xl p-3 text-xs mt-4" style={{background:"#f5f3ff", border:"1px solid #ddd6fe"}}>
-        <p className="font-bold text-purple-700 mb-1">💎 Part D — Rosenberg Self-Esteem Scale</p>
-        <p className="text-purple-600">{t.rses_intro}</p>
-        <p className="text-purple-500 mt-1">{t.rses_scale}</p>
-      </div>
-      {(t.rses_items||[]).map((item,i) => {
-        const val = resp[`rses${i+1}`];
-        return (
-          <div key={i} className="bg-white rounded-2xl border border-gray-200 p-4">
-            <p className="text-sm text-gray-700 mb-3">{i+1}. {item}</p>
-            <div className="flex gap-1.5">
-              {scale14.map(v => (
-                <button key={v} onClick={() => set(`rses${i+1}`, v)}
-                  className={cx("flex-1 py-2.5 rounded-xl text-sm font-bold border-2 transition-all",
-                    val===v ? "border-purple-500 bg-purple-50 text-purple-700" : "border-gray-200 text-gray-400")}>
-                  {v}
-                </button>
-              ))}
-            </div>
-            <div className="flex justify-between text-xs text-gray-400 mt-1 px-1">
-              <span>Strongly Disagree</span><span>Strongly Agree</span>
-            </div>
-          </div>
-        );
-      })}
-      <p className="text-xs text-gray-400 text-center">{t.rses_citation}</p>
-    </div>
-  );
-};
-
-// ══════════════════════════════════════════════════════════════════════════════
-//  DOMAIN 4 — RISK (C-SSRS + AUDIT-C)
-// ══════════════════════════════════════════════════════════════════════════════
-const DomainRiskFull = ({ resp, set, t }) => {
-  const AUDITC_DATA = [
-    { q: "How often do you have a drink containing alcohol?",
-      opts:["Never","Monthly or less","2–4 times a month","2–3 times a week","4+ times a week"], sc:[0,1,2,3,4] },
-    { q: "How many standard drinks on a typical drinking day?",
-      opts:["1–2","3–4","5–6","7–9","10 or more"], sc:[0,1,2,3,4] },
-    { q: "How often do you have 6+ drinks on one occasion?",
-      opts:["Never","Less than monthly","Monthly","Weekly","Daily or almost daily"], sc:[0,1,2,3,4] },
-  ];
-
-  return (
-    <div className="space-y-4">
-      {/* C-SSRS */}
-      <div className="rounded-xl p-3 text-xs" style={{background:"#fef2f2", border:"1px solid #fca5a5"}}>
-        <p className="font-bold text-red-700 mb-1">⚠️ {t.cssrs_title}</p>
-        <p className="text-red-600">{t.cssrs_note}</p>
-      </div>
-      {(t.cssrs_items||[]).map((q,i) => {
-        const val = resp[`css${i+1}`];
-        return (
-          <div key={i} className="bg-white rounded-2xl border border-gray-200 p-4">
-            <p className="text-sm text-gray-700 mb-3">{i+1}. {q}</p>
-            <div className="flex gap-2">
-              {[t.yes||"Yes", t.no||"No"].map((opt,j) => (
-                <button key={j} onClick={() => set(`css${i+1}`, j===0)}
-                  className={cx("flex-1 py-2.5 rounded-xl font-bold text-sm border-2 transition-all",
-                    val===(j===0)
-                      ? (j===0?"border-red-400 bg-red-50 text-red-700":"border-green-400 bg-green-50 text-green-700")
-                      : "border-gray-200 text-gray-500")}>
-                  {opt}
-                </button>
-              ))}
-            </div>
-          </div>
-        );
-      })}
-      <p className="text-xs text-gray-400 text-center">{t.cssrs_citation}</p>
-
-      {/* AUDIT-C */}
-      <div className="rounded-xl p-3 text-xs mt-4" style={{background:"#fffbeb", border:"1px solid #fcd34d"}}>
-        <p className="font-bold text-yellow-700 mb-1">🍺 {t.audit_title}</p>
-        <p className="text-yellow-600 italic">{t.audit_note}</p>
-      </div>
-      {AUDITC_DATA.map((item,i) => {
-        const val = resp[`aud${i+1}`];
-        const q1Never = resp["aud1"] === 0;
-        if (i > 0 && q1Never) return null;
-        return (
-          <div key={i} className="bg-white rounded-2xl border border-gray-200 p-4">
-            <p className="text-sm text-gray-700 mb-2">{item.q}</p>
-            <div className="space-y-1.5">
-              {item.opts.map((opt,j) => (
-                <button key={j} onClick={() => { set(`aud${i+1}`, j); if(j===0&&i===0){set("aud2",0);set("aud3",0);} }}
-                  className={cx("w-full text-left py-2 px-3 rounded-xl text-xs border-2 transition-all",
-                    val===j ? "border-orange-500 bg-orange-50 text-orange-700 font-bold" : "border-gray-200 text-gray-600")}>
-                  {opt}
-                </button>
-              ))}
-            </div>
-          </div>
-        );
-      })}
-      {resp["aud1"] === 0 && (
-        <div className="bg-green-50 border border-green-200 rounded-2xl p-3">
-          <p className="text-sm text-green-700 font-bold">{t.audit_never_msg}</p>
-        </div>
-      )}
-      <p className="text-xs text-gray-400 text-center">{t.audit_citation}</p>
-    </div>
-  );
-};
-
-
-// ══════════════════════════════════════════════════════════════════════════════
-//  COMBINED VALID REPORT
-// ══════════════════════════════════════════════════════════════════════════════
-function ValidReport({ results, subjInfo, t, onNew }) {
-  const [tab, setTab] = useState("self");
-  const today = new Date().toLocaleDateString("en-IN", {year:"numeric",month:"long",day:"numeric"});
-  const { catRes, bfi, pid5, who5, phq9, gad7, rses, css, aud } = results;
-
-  const SBar = ({label, value, max=100, color="#3b82f6", suffix=""}) => (
-    <div style={{marginBottom:8}}>
-      <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:2}}>
-        <span style={{color:"#374151",fontWeight:600}}>{label}</span>
-        <span style={{fontWeight:800,color,fontFamily:"monospace"}}>{value}{suffix}</span>
-      </div>
-      <div style={{background:"#f3f4f6",borderRadius:4,height:7,overflow:"hidden"}}>
-        <div style={{width:`${Math.min((value/max)*100,100)}%`,height:"100%",background:color,borderRadius:4}}/>
-      </div>
-    </div>
-  );
-
-  const Card = ({title,color,icon,children}) => (
-    <div style={{background:"white",borderRadius:14,marginBottom:16,border:`1px solid ${color}20`,overflow:"hidden",boxShadow:"0 2px 12px rgba(0,0,0,0.05)"}}>
-      <div style={{background:`linear-gradient(135deg,${color},${color}dd)`,padding:"10px 16px",color:"white"}}>
-        <div style={{fontSize:11,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase"}}>{icon} {title}</div>
-      </div>
-      <div style={{padding:16}}>{children}</div>
-    </div>
-  );
-
-  return (
-    <div style={{background:"#e8ecf0",minHeight:"100vh",padding:"16px 8px 80px",fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
-      <style>{`@media print{body{background:white!important}#no-print{display:none!important}}`}</style>
-      <div id="no-print" style={{maxWidth:800,margin:"0 auto 14px",display:"flex",gap:9}}>
-        <button onClick={()=>window.print()} style={{flex:1,padding:"11px",background:"#1e3a5f",color:"white",border:"none",borderRadius:9,fontSize:12,fontWeight:700,cursor:"pointer"}}>{t.print}</button>
-        <button onClick={onNew} style={{flex:1,padding:"11px",background:"white",color:"#1e3a5f",border:"1.5px solid #1e3a5f",borderRadius:9,fontSize:12,fontWeight:600,cursor:"pointer"}}>{t.newAssess}</button>
-      </div>
-
-      <div style={{maxWidth:800,margin:"0 auto",background:"white",boxShadow:"0 4px 40px rgba(0,0,0,0.12)",borderRadius:4}}>
-        {/* Header */}
-        <div style={{background:"linear-gradient(135deg,#3b1f6e,#6d28d9,#8b5cf6)",padding:"22px 24px",color:"white"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:10}}>
-            <div>
-              <div style={{fontSize:9,letterSpacing:"0.18em",textTransform:"uppercase",color:"#e9d5ff",marginBottom:4}}>CIBS-VALID · Gold Standard Battery</div>
-              <div style={{fontSize:22,fontWeight:900}}>Validation Assessment Report</div>
-              <div style={{fontSize:11,color:"rgba(255,255,255,0.7)",marginTop:2}}>Ravens CAT · BFI-10 · PID-5-BF · WHO-5 · PHQ-9 · GAD-7 · RSES · C-SSRS · AUDIT-C</div>
-            </div>
-            <div style={{textAlign:"right",fontSize:11,color:"rgba(255,255,255,0.7)",lineHeight:2}}>
-              <div style={{color:"white",fontWeight:700,fontSize:13}}>{today}</div>
-              <div>Dr. Shailesh V. Pangaonkar</div>
-              <div>CIBS Nagpur</div>
-            </div>
-          </div>
-          {/* Subject strip */}
-          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginTop:16}}>
-            {[["Name",subjInfo.name||"—"],["Age",subjInfo.age+" yrs"],["Gender",subjInfo.gender||"—"],["VISTA UID",subjInfo.vistaUID||"—"]].map(([k,v])=>(
-              <div key={k} style={{background:"rgba(255,255,255,0.15)",borderRadius:8,padding:"8px 10px"}}>
-                <div style={{fontSize:9,color:"#e9d5ff",textTransform:"uppercase"}}>{k}</div>
-                <div style={{fontSize:11,fontWeight:700,color:"white",marginTop:2}}>{v}</div>
-              </div>))}
-          </div>
-        </div>
-
-        {/* Tab bar */}
-        <div id="no-print" style={{display:"flex",borderBottom:"2px solid #e2e8f0",background:"#f8fafc"}}>
-          {[["self","👤 "+t.forSelf],["clinician","🏥 "+t.forClinician]].map(([id,label])=>(
-            <button key={id} onClick={()=>setTab(id)} style={{flex:1,padding:"12px",background:tab===id?"white":"transparent",color:tab===id?"#6d28d9":"#64748b",border:"none",borderBottom:tab===id?"2px solid #6d28d9":"2px solid transparent",marginBottom:-2,fontSize:12,fontWeight:tab===id?700:500,cursor:"pointer"}}>{label}</button>))}
-        </div>
-
-        <div style={{padding:"20px 20px 40px"}}>
-
-          {/* SELF TAB */}
-          {tab==="self" && (
-            <div>
-              {/* Cognitive */}
-              <Card title="Cognitive Ability — Ravens CAT" color="#3b82f6" icon="🧩">
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:12}}>
-                  <div style={{background:catRes.band===4?"#fef9c3":catRes.band===3?"#f0fdf4":catRes.band===2?"#eff6ff":"#fef2f2",borderRadius:12,padding:16,textAlign:"center"}}>
-                    <div style={{fontSize:10,color:"#64748b",textTransform:"uppercase",marginBottom:4}}>IQ Estimate</div>
-                    <div style={{fontSize:42,fontWeight:900,color:"#1e3a5f"}}>{catRes.iq}</div>
-                    <div style={{fontSize:13,fontWeight:700,color:"#374151"}}>{catRes.label}</div>
-                    <div style={{fontSize:11,color:"#64748b"}}>{catRes.pctRank}th percentile</div>
-                  </div>
-                  <div style={{display:"flex",flexDirection:"column",gap:8,justifyContent:"center"}}>
-                    <div style={{background:"#f8fafc",borderRadius:10,padding:12}}>
-                      <div style={{fontSize:10,color:"#64748b",textTransform:"uppercase"}}>Band</div>
-                      <div style={{fontSize:16,fontWeight:800,color:"#1e3a5f"}}>{catRes.label} (Band {catRes.band}/4)</div>
-                    </div>
-                    <div style={{background:"#f8fafc",borderRadius:10,padding:12}}>
-                      <div style={{fontSize:10,color:"#64748b",textTransform:"uppercase"}}>Items Correct</div>
-                      <div style={{fontSize:16,fontWeight:800,color:"#1e3a5f"}}>{catRes.totalCorrect}/{catRes.totalQ}</div>
-                    </div>
-                  </div>
-                </div>
-              </Card>
-
-              {/* Personality */}
-              <Card title="Personality — Big Five (BFI-10)" color="#8b5cf6" icon="🪞">
-                <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8,marginBottom:12}}>
-                  {[["O","Openness","#8b5cf6"],["C","Consci.","#0891b2"],["E","Extraver.","#059669"],["A","Agreeable.","#d97706"],["N","Neurotic.","#dc2626"]].map(([d,l,c])=>(
-                    <div key={d} style={{background:"white",borderRadius:10,padding:10,border:`1px solid ${c}30`,textAlign:"center"}}>
-                      <div style={{fontSize:22,fontWeight:900,color:c}}>{bfi[d]}</div>
-                      <div style={{fontSize:9,color:"#9ca3af",marginTop:2}}>{l}</div>
-                      <div style={{height:3,background:"#f1f5f9",borderRadius:2,marginTop:6}}>
-                        <div style={{width:`${((parseFloat(bfi[d])-1)/4)*100}%`,height:"100%",background:c,borderRadius:2}}/>
-                      </div>
-                    </div>))}
-                </div>
-                <div style={{fontSize:10,color:"#64748b",textAlign:"center"}}>Range 1–5 · Rammstedt & John, 2007</div>
-              </Card>
-
-              {/* DSM-5 Clusters */}
-              <Card title="Personality Disorders — PID-5-BF (DSM-5)" color="#f59e0b" icon="🔍">
-                <div style={{background:"#fffbeb",borderRadius:10,padding:12,marginBottom:12,border:"1px solid #fcd34d"}}>
-                  <div style={{fontSize:11,fontWeight:800,color:"#92400e"}}>Dominant Pattern</div>
-                  <div style={{fontSize:14,fontWeight:700,color:"#78350f",marginTop:4}}>{pid5.dominant}</div>
-                </div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:8}}>
-                  {[["Cluster A","#6366f1",pid5.clusters.A],["Cluster B","#f59e0b",pid5.clusters.B],["Cluster C","#10b981",pid5.clusters.C]].map(([l,c,v])=>(
-                    <div key={l} style={{background:"white",borderRadius:10,padding:10,border:`1px solid ${c}30`,textAlign:"center"}}>
-                      <div style={{fontSize:20,fontWeight:900,color:c}}>{v}</div>
-                      <div style={{fontSize:10,color:"#9ca3af"}}>{l}</div>
-                    </div>))}
-                </div>
-                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                  {Object.entries(pid5.domains).map(([d,v])=>(
-                    <div key={d} style={{background:"#f8fafc",borderRadius:8,padding:"6px 10px",fontSize:11}}>
-                      <span style={{fontWeight:700,color:"#374151"}}>{d}: </span>
-                      <span style={{color:"#6b7280"}}>{v}/3</span>
-                    </div>))}
-                </div>
-                <div style={{fontSize:10,color:"#64748b",marginTop:8}}>PID-5-BF: © APA 2013. Free for researchers and clinicians.</div>
-              </Card>
-
-              {/* WHO-5 + PHQ-9 + GAD-7 */}
-              <Card title="Health & Wellbeing" color="#10b981" icon="💚">
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
-                  {[
-                    ["WHO-5","Wellbeing",who5.score,100,who5.level,who5.score>=52?"#10b981":"#f59e0b"],
-                    ["PHQ-9","Depression",phq9.score,27,phq9.level,phq9.color],
-                    ["GAD-7","Anxiety",gad7.score,21,gad7.level,gad7.color],
-                  ].map(([scale,name,score,max,level,color])=>(
-                    <div key={scale} style={{background:"#f8fafc",borderRadius:10,padding:12,textAlign:"center",border:`1px solid ${color}30`}}>
-                      <div style={{fontSize:9,color:"#64748b",textTransform:"uppercase"}}>{scale}</div>
-                      <div style={{fontSize:24,fontWeight:900,color}}>{score}</div>
-                      <div style={{fontSize:10,color:"#9ca3af"}}>/{max}</div>
-                      <div style={{fontSize:10,fontWeight:700,color,marginTop:2}}>{level}</div>
-                      <div style={{height:3,background:"#e2e8f0",borderRadius:2,marginTop:6}}>
-                        <div style={{width:`${(score/max)*100}%`,height:"100%",background:color,borderRadius:2}}/>
-                      </div>
-                    </div>))}
-                </div>
-                {/* RSES */}
-                <div style={{background:"#f5f3ff",borderRadius:10,padding:12,display:"flex",gap:16,alignItems:"center"}}>
-                  <div style={{textAlign:"center"}}>
-                    <div style={{fontSize:9,color:"#6d28d9",textTransform:"uppercase"}}>RSES</div>
-                    <div style={{fontSize:28,fontWeight:900,color:"#6d28d9"}}>{rses.score}</div>
-                    <div style={{fontSize:10,color:"#9ca3af"}}>/40</div>
-                  </div>
-                  <div>
-                    <div style={{fontSize:13,fontWeight:700,color:"#4c1d95"}}>{rses.level}</div>
-                    <div style={{fontSize:11,color:"#64748b"}}>Rosenberg Self-Esteem Scale</div>
-                    {who5.screenDepression && (
-                      <div style={{fontSize:10,background:"#fef2f2",color:"#dc2626",borderRadius:6,padding:"4px 8px",marginTop:6,fontWeight:700}}>
-                        ⚠ WHO-5 score suggests depression screening needed
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </Card>
-
-              {/* Risk */}
-              <Card title="Risk Screening" color="#dc2626" icon="🛡">
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                  <div style={{background:css.level>=2?"#fef2f2":"#f0fdf4",borderRadius:10,padding:12,border:`1px solid ${css.color}40`}}>
-                    <div style={{fontSize:10,fontWeight:700,color:css.color,textTransform:"uppercase",marginBottom:4}}>C-SSRS Suicidality</div>
-                    <div style={{fontSize:18,fontWeight:900,color:css.color}}>{css.label}</div>
-                    <div style={{fontSize:11,color:"#64748b"}}>Level {css.level}/4</div>
-                    {css.level >= 2 && <div style={{fontSize:11,color:"#dc2626",fontWeight:700,marginTop:4}}>⚠ Clinical assessment required</div>}
-                  </div>
-                  <div style={{background:aud.level>=1?"#fffbeb":"#f0fdf4",borderRadius:10,padding:12,border:`1px solid ${aud.color}40`}}>
-                    <div style={{fontSize:10,fontWeight:700,color:aud.color,textTransform:"uppercase",marginBottom:4}}>AUDIT-C Alcohol</div>
-                    <div style={{fontSize:18,fontWeight:900,color:aud.color}}>{aud.label}</div>
-                    <div style={{fontSize:11,color:"#64748b"}}>Score: {aud.score}/12</div>
-                  </div>
-                </div>
-              </Card>
-            </div>
-          )}
-
-          {/* CLINICIAN TAB */}
-          {tab==="clinician" && (
-            <div style={{fontFamily:"'Courier New',monospace"}}>
-              <div style={{background:"#3b1f6e",color:"white",borderRadius:10,padding:"14px 18px",marginBottom:20}}>
-                <div style={{fontSize:10,letterSpacing:"0.15em",color:"#e9d5ff"}}>CIBS-VALID CLINICAL REPORT — CONFIDENTIAL</div>
-                <div style={{fontSize:13,fontWeight:700,marginTop:4}}>{subjInfo.name||"Anonymous"} · Age {subjInfo.age} · {subjInfo.gender} · {today}</div>
-                <div style={{fontSize:11,color:"#e9d5ff",marginTop:2}}>Examiner: {subjInfo.examiner||"—"} · Diagnosis: {subjInfo.diagnosis||"—"} · VISTA UID: {subjInfo.vistaUID||"—"}</div>
-              </div>
-
-              {/* Section 1 */}
-              <div style={{marginBottom:20}}>
-                <div style={{fontSize:11,fontWeight:900,color:"#3b82f6",letterSpacing:"0.12em",textTransform:"uppercase",marginBottom:10,paddingBottom:6,borderBottom:"2px solid #3b82f6"}}>I. COGNITIVE ABILITY — RAVENS CAT</div>
-                <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
-                  <tbody>
-                    {[["IQ Estimate",catRes.iq,"Mean=100, SD=15"],["Classification",catRes.label,""],["Percentile",catRes.pctRank+"th",""],["Band",catRes.band+"/4",""],["Items Correct",`${catRes.totalCorrect}/${catRes.totalQ}`,"Raw score"]].map(([l,v,n])=>(
-                      <tr key={l} style={{borderBottom:"1px solid #f1f5f9"}}>
-                        <td style={{padding:"6px 8px",fontWeight:600,color:"#374151",width:"40%"}}>{l}</td>
-                        <td style={{padding:"6px 8px",fontWeight:900,color:"#1e3a5f",width:"35%"}}>{v}</td>
-                        <td style={{padding:"6px 8px",color:"#9ca3af",fontSize:10}}>{n}</td>
-                      </tr>))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Section 2 */}
-              <div style={{marginBottom:20}}>
-                <div style={{fontSize:11,fontWeight:900,color:"#8b5cf6",letterSpacing:"0.12em",textTransform:"uppercase",marginBottom:10,paddingBottom:6,borderBottom:"2px solid #8b5cf6"}}>II. PERSONALITY — BFI-10 + PID-5-BF</div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:6,marginBottom:12}}>
-                  {Object.entries(bfi).map(([d,v])=>(
-                    <div key={d} style={{background:"#f8fafc",borderRadius:8,padding:"8px",textAlign:"center",border:"1px solid #e2e8f0"}}>
-                      <div style={{fontSize:16,fontWeight:900,color:"#6d28d9"}}>{v}</div>
-                      <div style={{fontSize:9,color:"#9ca3af"}}>BFI-{d}</div>
-                    </div>))}
-                </div>
-                <div style={{background:"#fffbeb",borderRadius:8,padding:"10px 12px",marginBottom:8}}>
-                  <div style={{fontSize:11,fontWeight:800,color:"#92400e"}}>DSM-5 PID-5-BF Dominant Cluster: {pid5.dominant}</div>
-                  <div style={{fontSize:11,color:"#78350f",marginTop:4}}>Cluster A: {pid5.clusters.A} · Cluster B: {pid5.clusters.B} · Cluster C: {pid5.clusters.C}</div>
-                </div>
-                <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
-                  <tbody>
-                    {Object.entries(pid5.domains).map(([d,v])=>(
-                      <tr key={d} style={{borderBottom:"1px solid #f1f5f9"}}>
-                        <td style={{padding:"5px 8px",fontWeight:600,color:"#374151"}}>{d}</td>
-                        <td style={{padding:"5px 8px",fontWeight:900,color:"#f59e0b"}}>{v}/3</td>
-                        <td style={{padding:"5px 8px",color:"#9ca3af",fontSize:10}}>{parseFloat(v)>=2?"Elevated":parseFloat(v)>=1?"Moderate":"Low"}</td>
-                      </tr>))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Section 3 */}
-              <div style={{marginBottom:20}}>
-                <div style={{fontSize:11,fontWeight:900,color:"#10b981",letterSpacing:"0.12em",textTransform:"uppercase",marginBottom:10,paddingBottom:6,borderBottom:"2px solid #10b981"}}>III. HEALTH & WELLBEING</div>
-                <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
-                  <tbody>
-                    {[
-                      ["WHO-5 Wellbeing",who5.score+"/100",who5.level,who5.screenDepression?"Screen for depression":"Adequate"],
-                      ["PHQ-9 Depression",phq9.score+"/27",phq9.level,phq9.score>=10?"Intervention indicated":""],
-                      ["GAD-7 Anxiety",gad7.score+"/21",gad7.level,gad7.score>=10?"Intervention indicated":""],
-                      ["Rosenberg RSES",rses.score+"/40",rses.level,""],
-                    ].map(([l,v,level,note])=>(
-                      <tr key={l} style={{borderBottom:"1px solid #f1f5f9"}}>
-                        <td style={{padding:"6px 8px",fontWeight:600,color:"#374151",width:"35%"}}>{l}</td>
-                        <td style={{padding:"6px 8px",fontWeight:900,color:"#1e3a5f",width:"15%"}}>{v}</td>
-                        <td style={{padding:"6px 8px",fontWeight:700,color:"#10b981",width:"25%"}}>{level}</td>
-                        <td style={{padding:"6px 8px",color:"#9ca3af",fontSize:10}}>{note}</td>
-                      </tr>))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Section 4 */}
-              <div style={{marginBottom:20}}>
-                <div style={{fontSize:11,fontWeight:900,color:"#dc2626",letterSpacing:"0.12em",textTransform:"uppercase",marginBottom:10,paddingBottom:6,borderBottom:"2px solid #dc2626"}}>IV. RISK SCREENING</div>
-                <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
-                  <tbody>
-                    <tr style={{borderBottom:"1px solid #f1f5f9"}}>
-                      <td style={{padding:"6px 8px",fontWeight:600,color:"#374151"}}>C-SSRS (Suicidality)</td>
-                      <td style={{padding:"6px 8px",fontWeight:900,color:css.color}}>{css.label} (Level {css.level}/4)</td>
-                      <td style={{padding:"6px 8px",color:"#9ca3af",fontSize:10}}>{css.level>=3?"Immediate assessment":"Monitor"}</td>
-                    </tr>
-                    <tr style={{borderBottom:"1px solid #f1f5f9"}}>
-                      <td style={{padding:"6px 8px",fontWeight:600,color:"#374151"}}>AUDIT-C (Alcohol)</td>
-                      <td style={{padding:"6px 8px",fontWeight:900,color:aud.color}}>{aud.label} (Score {aud.score}/12)</td>
-                      <td style={{padding:"6px 8px",color:"#9ca3af",fontSize:10}}>{aud.score>=4?"Brief intervention":"No action needed"}</td>
-                    </tr>
-                  </tbody>
-                </table>
-                {css.level >= 2 && (
-                  <div style={{background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:8,padding:"10px 12px",marginTop:10}}>
-                    <div style={{fontWeight:700,color:"#dc2626",fontSize:12}}>⚠ PRIORITY: C-SSRS Level {css.level} — Structured clinical safety assessment required at this contact.</div>
-                  </div>
-                )}
-              </div>
-
-              {/* Instruments footer */}
-              <div style={{marginTop:16,fontSize:10,color:"#9ca3af",lineHeight:1.8,borderTop:"1px solid #e2e8f0",paddingTop:12}}>
-                <strong>Instruments used:</strong> Ravens CAT (CIBS original, Cattell/Raven framework) · BFI-10 (Rammstedt & John, 2007, open access) · PID-5-BF (Krueger et al., 2013, © APA, free for researchers/clinicians) · WHO-5 (WHO, 2024, CC BY-NC-SA 3.0 IGO) · PHQ-9 (Kroenke et al., 2001, © Pfizer, free) · GAD-7 (Spitzer et al., 2006, © Pfizer, free) · RSES (Rosenberg, 1965, public domain) · C-SSRS (Posner et al., 2011, Columbia University, public domain) · AUDIT-C (Bush et al., 1998, WHO, public domain)<br/>
-                <strong>Disclaimer:</strong> Screening tool only. All findings require clinical confirmation by qualified professional.
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+      {screen==="welcome"     && <Welcome onSelf={()=>startFlow("self")} onClinician={()=>startFlow("assisted")}/>}
+      {screen==="eligibility" && <Eligibility onResult={(r)=>{ setMode(r); setScreen("consent"); }}/>}
+      {screen==="consent"     && <Consent mode={mode} onConsent={()=>setScreen("assessment")}/>}
+      {screen==="assessment"  && <Assessment mode={mode} onComplete={(r)=>{ setResponses(r); setScreen("demographics"); }}/>}
+      {screen==="demographics"&& <Demographics onComplete={(d)=>{ setDemographics(d); setScreen("report"); }}/>}
+      {screen==="report"      && responses && demographics &&
+        <Report responses={responses} demographics={demographics} mode={mode}/>}
     </div>
   );
 }
-
-// ══════════════════════════════════════════════════════════════════════════════
-//  MAIN VALID APP
-// ══════════════════════════════════════════════════════════════════════════════
-export default function CIBSVALIDApp() {
-  const [lang, setLang]         = useState(null);
-  const [screen, setScreen]     = useState("language");
-  const [agreed, setAgreed]     = useState(false);
-  const [subjInfo, setSubjInfo] = useState({name:"",age:"",gender:"",edu:"",mobile:"",diagnosis:"",examiner:"",setting:"",vistaUID:""});
-  const [domain, setDomain]     = useState(1);
-  const [resp, setResp]         = useState({d1:{},d2:{},d3:{},d4:{}});
-  const [results, setResults]   = useState(null);
-  const [generating, setGenerating] = useState(false);
-  const scrollRef = useRef(null);
-
-  const t = T[lang] || T.en;
-
-  const set = (d, k, v) => setResp(r => ({ ...r, [`d${d}`]: { ...r[`d${d}`], [k]: v } }));
-
-  const DOMAIN_META = [
-    { id:1, name:"Cognition",      color:"#3B82F6", bg:"#EFF6FF", icon:"🧩", count:22   },
-    { id:2, name:"Personality",    color:"#8B5CF6", bg:"#F5F3FF", icon:"🪞", count:35   },
-    { id:3, name:"Health",         color:"#10B981", bg:"#F0FDF4", icon:"💚", count:31   },
-    { id:4, name:"Risk",           color:"#EF4444", bg:"#FEF2F2", icon:"🛡", count:8    },
-  ];
-
-  const answered = (d) => {
-    if (d===1) return resp.d1._done === 1 ? DOMAIN_META[0].count : 0;
-    return Object.keys(resp[`d${d}`]).length;
-  };
-  const complete = (d) => {
-    if (d===1) return resp.d1._done === 1;
-    return answered(d) >= DOMAIN_META[d-1].count;
-  };
-  const pct = () => {
-    const total = DOMAIN_META.reduce((s,m)=>s+m.count,0);
-    const done  = DOMAIN_META.reduce((s,m)=>s+Math.min(answered(m.id),m.count),0);
-    return Math.round(done/total*100);
-  };
-  const allDone = DOMAIN_META.every(m => complete(m.id));
-  const cd = DOMAIN_META[Math.min(domain,DOMAIN_META.length)-1];
-
-  const f = (k,v) => setSubjInfo(p=>({...p,[k]:v}));
-  const canProceed = subjInfo.age && subjInfo.gender;
-
-  // Auto-advance: when a domain is completed, scroll to top and move to next domain after 1.5s
-  useEffect(() => {
-    if (screen !== "assessment") return;
-    const isComplete = complete(domain);
-    const hasNext = domain < DOMAIN_META.length;
-    if (isComplete && hasNext) {
-      const timer = setTimeout(() => {
-        setDomain(d => d + 1);
-        scrollRef.current?.scrollTo(0, 0);
-        window.scrollTo(0, 0);
-      }, 1500);
-      return () => clearTimeout(timer);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resp, domain, screen]);
-
-  // Auto-scroll to submit block when all domains done
-  useEffect(() => {
-    if (screen !== "assessment") return;
-    if (allDone) {
-      setTimeout(() => {
-        const el = document.getElementById("submit-block");
-        if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-      }, 300);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allDone, screen]);
-
-  const reset = () => {
-    setLang(null); setScreen("language"); setAgreed(false);
-    setSubjInfo({name:"",age:"",gender:"",edu:"",mobile:"",diagnosis:"",examiner:"",setting:"",vistaUID:""});
-    setDomain(1); setResp({d1:{},d2:{},d3:{},d4:{}}); setResults(null); setGenerating(false);
-  };
-
-  const completeAssessment = async () => {
-    setGenerating(true);
-    // Score everything
-    const catRes  = scoreCAT(resp.d1);
-    const bfi     = scoreBFI(resp.d2);
-    const pid5    = scorePID5(resp.d2);
-    const who5    = scoreWHO5(resp.d3);
-    const phq9    = scorePHQ9(resp.d3);
-    const gad7    = scoreGAD7(resp.d3);
-    const rses    = scoreRSES(resp.d3);
-    const css     = scoreCSS(resp.d4);
-    const aud     = scoreAUDIT(resp.d4);
-
-    const scored = { catRes, bfi, pid5, who5, phq9, gad7, rses, css, aud };
-    setResults(scored);
-
-    // Submit to Google Sheets — Battery_OPD tab
-    try {
-      const uid = subjInfo.vistaUID ||
-        (subjInfo.mobile ? btoa(subjInfo.name.slice(0,3)+subjInfo.age+subjInfo.mobile.slice(-4)).slice(0,12).toUpperCase() : "ANON-"+Date.now().toString(36).toUpperCase().slice(-6));
-
-      const payload = {
-        // Routing — goes to Battery_OPD and Battery_Research
-        Source: "valid-standalone",
-        UID: uid,
-        Name: subjInfo.name,
-        Age: subjInfo.age,
-        Gender: subjInfo.gender,
-        Education: subjInfo.edu,
-        Mobile: subjInfo.mobile,
-        Diagnosis: subjInfo.diagnosis,
-        Language: lang || "en",
-        Device: navigator.userAgent.match(/Mobile/i) ? "Mobile" : "Desktop",
-        // Cognitive
-        "VALID CQ": catRes.iq,
-        "VALID CQ Band": catRes.label,
-        "VALID Percentile": catRes.pctRank,
-        // Personality BFI-10
-        "VALID BFI-O": bfi.O,
-        "VALID BFI-C": bfi.C,
-        "VALID BFI-E": bfi.E,
-        "VALID BFI-A": bfi.A,
-        "VALID BFI-N": bfi.N,
-        // Personality PID-5-BF
-        "VALID PID5 Neg Affect": pid5.domains["Negative Affect"],
-        "VALID PID5 Detachment": pid5.domains["Detachment"],
-        "VALID PID5 Antagonism": pid5.domains["Antagonism"],
-        "VALID PID5 Disinhibition": pid5.domains["Disinhibition"],
-        "VALID PID5 Psychoticism": pid5.domains["Psychoticism"],
-        "VALID DSM Cluster": pid5.dominant,
-        // Health
-        "VALID WHO5": who5.score,
-        "VALID WHO5 Level": who5.level,
-        "VALID PHQ9": phq9.score,
-        "VALID PHQ9 Level": phq9.level,
-        "VALID GAD7": gad7.score,
-        "VALID GAD7 Level": gad7.level,
-        "VALID RSES": rses.score,
-        "VALID RSES Level": rses.level,
-        // Risk
-        "VALID CSSRS Level": css.level,
-        "VALID CSSRS Label": css.label,
-        "VALID AUDIT Score": aud.score,
-        "VALID AUDIT Label": aud.label,
-      };
-      await submitToSheet(payload);
-      console.log("✅ CIBS-VALID submitted successfully");
-    } catch(err) {
-      console.error("❌ Submission error:", err);
-    }
-
-    setGenerating(false);
-    setScreen("report");
-  };
-
-  // ── SCREENS ───────────────────────────────────────────────────
-  const rootStyle = {minHeight:"100vh",background:"#f0f4f8",fontFamily:"'Segoe UI',system-ui,sans-serif"};
-  const cardStyle = {background:"white",borderRadius:14,padding:"20px 18px",maxWidth:580,width:"100%",margin:"0 auto",boxShadow:"0 2px 18px rgba(0,0,0,0.09)"};
-
-  // Language
-  if (screen==="language") return (
-    <div style={rootStyle}>
-      <div style={{background:"linear-gradient(135deg,#3b1f6e,#6d28d9)",padding:"32px 20px 44px",textAlign:"center",color:"white",marginBottom:-20}}>
-        <div style={{fontSize:9,letterSpacing:"0.2em",color:"#e9d5ff",textTransform:"uppercase",marginBottom:8}}>Central Institute of Behavioural Sciences, Nagpur</div>
-        <div style={{fontSize:28,fontWeight:900,marginBottom:4}}>CIBS-VALID</div>
-        <div style={{fontSize:13,color:"#ddd6fe"}}>Gold Standard Validation Battery · Adult</div>
-        <div style={{fontSize:11,color:"rgba(255,255,255,0.5)",marginTop:4}}>Ravens CAT · BFI-10 · PID-5-BF · WHO-5 · PHQ-9 · GAD-7 · RSES · C-SSRS · AUDIT-C</div>
-      </div>
-      <div style={{...cardStyle,marginTop:40}}>
-        <div style={{fontSize:13,fontWeight:700,color:"#3b1f6e",textAlign:"center",marginBottom:20}}>{T.en.choose}</div>
-        <div style={{display:"flex",flexDirection:"column",gap:10}}>
-          {[["en","English","A"],["hi","हिंदी — Hindi","अ"],["mr","मराठी — Marathi","अ"]].map(([code,label,icon])=>(
-            <button key={code} onClick={()=>{setLang(code);setScreen("disclaimer");}} style={{padding:"14px 18px",borderRadius:12,border:"1.5px solid #e2e8f0",background:"white",cursor:"pointer",display:"flex",alignItems:"center",gap:12,fontSize:14,fontWeight:600,color:"#3b1f6e",transition:"all 0.2s"}}
-              onMouseEnter={e=>{e.currentTarget.style.borderColor="#6d28d9";e.currentTarget.style.background="#f5f3ff";}}
-              onMouseLeave={e=>{e.currentTarget.style.borderColor="#e2e8f0";e.currentTarget.style.background="white";}}>
-              <span style={{width:36,height:36,borderRadius:"50%",background:"#6d28d9",color:"white",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:900}}>{icon}</span>
-              {label}
-            </button>))}
-        </div>
-      </div>
-    </div>
-  );
-
-  // Disclaimer
-  if (screen==="disclaimer") return (
-    <div style={rootStyle}>
-      <div style={{background:"linear-gradient(135deg,#3b1f6e,#6d28d9)",padding:"20px",textAlign:"center",color:"white",marginBottom:24}}>
-        <div style={{fontSize:16,fontWeight:800}}>CIBS-VALID</div>
-        <div style={{fontSize:11,color:"#ddd6fe"}}>{t.disclaimer}</div>
-      </div>
-      <div style={cardStyle}>
-        <div style={{background:"#fef9ec",border:"1.5px solid #fcd34d",borderRadius:12,padding:"14px 16px",marginBottom:20}}>
-          <div style={{fontSize:12,fontWeight:700,color:"#92400e",marginBottom:10}}>⚠ {t.disclaimer}</div>
-          <ol style={{margin:0,paddingLeft:18,color:"#78350f",fontSize:12,lineHeight:2}}>
-            {(t.discPoints||[]).map((p,i)=><li key={i}>{p}</li>)}
-          </ol>
-        </div>
-        <label style={{display:"flex",alignItems:"flex-start",gap:10,cursor:"pointer",marginBottom:20}}>
-          <input type="checkbox" checked={agreed} onChange={e=>setAgreed(e.target.checked)} style={{marginTop:2,width:16,height:16}}/>
-          <span style={{fontSize:13,color:"#374151",lineHeight:1.6}}>{t.agreeText}</span>
-        </label>
-        <button onClick={()=>agreed&&setScreen("demographics")} style={{width:"100%",padding:"14px",borderRadius:12,background:agreed?"linear-gradient(135deg,#3b1f6e,#6d28d9)":"#e2e8f0",color:agreed?"white":"#9ca3af",border:"none",fontSize:14,fontWeight:700,cursor:agreed?"pointer":"not-allowed"}}>{t.proceedBtn}</button>
-      </div>
-    </div>
-  );
-
-  // Demographics
-  if (screen==="demographics") {
-    const INP = {width:"100%",padding:"10px 12px",border:"1.5px solid #cbd5e1",borderRadius:10,fontSize:13,fontFamily:"inherit",outline:"none",boxSizing:"border-box",background:"#fafafa",color:"#0f172a"};
-    const LBL = {display:"block",fontSize:10,fontWeight:700,color:"#3b1f6e",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:4};
-    return (
-      <div style={rootStyle}>
-        <div style={{background:"linear-gradient(135deg,#3b1f6e,#6d28d9)",padding:"20px",textAlign:"center",color:"white",marginBottom:24}}>
-          <div style={{fontSize:16,fontWeight:800}}>CIBS-VALID — {t.subjInfo}</div>
-        </div>
-        <div style={{...cardStyle,maxWidth:620}}>
-          <div style={{background:"white",borderRadius:14,padding:16,marginBottom:14,border:"1px solid #e2e8f0"}}>
-            <div style={{fontSize:11,fontWeight:700,color:"#3b1f6e",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:12}}>Participant</div>
-            <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:10,marginBottom:10}}>
-              <div><label style={LBL}>{t.name}</label><input style={INP} placeholder="—" value={subjInfo.name} onChange={e=>f("name",e.target.value)}/></div>
-              <div><label style={LBL}>{t.age} *</label><input style={INP} type="number" min={18} max={99} placeholder="35" value={subjInfo.age} onChange={e=>f("age",e.target.value)}/></div>
-            </div>
-            <div style={{marginBottom:10}}>
-              <label style={LBL}>{t.gender} *</label>
-              <div style={{display:"flex",gap:7}}>
-                {[[t.gM,"Male"],[t.gF,"Female"],[t.gO,"Other"],[t.gN,"N/S"]].map(([label,val])=>(
-                  <button key={val} onClick={()=>f("gender",val)} style={{flex:1,padding:"9px 4px",borderRadius:9,fontSize:11,fontWeight:700,cursor:"pointer",border:subjInfo.gender===val?"2px solid #6d28d9":"2px solid #e2e8f0",background:subjInfo.gender===val?"#6d28d9":"white",color:subjInfo.gender===val?"white":"#94a3b8"}}>{label}</button>))}
-              </div>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
-              <div><label style={LBL}>{t.edu}</label>
-                <select style={INP} value={subjInfo.edu} onChange={e=>f("edu",e.target.value)}>
-                  <option value="">— Select —</option>
-                  {["Illiterate","Primary","Secondary","Higher Secondary","Graduate","Post-Graduate","Doctoral"].map(o=><option key={o}>{o}</option>)}
-                </select></div>
-              <div><label style={LBL}>{t.mobile}</label><input style={INP} type="tel" maxLength={10} placeholder="9876543210" value={subjInfo.mobile} onChange={e=>f("mobile",e.target.value)}/></div>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              <div><label style={LBL}>{t.examiner}</label><input style={INP} placeholder="Dr. Name" value={subjInfo.examiner} onChange={e=>f("examiner",e.target.value)}/></div>
-              <div><label style={LBL}>{t.diagnosis}</label><input style={INP} placeholder="—" value={subjInfo.diagnosis} onChange={e=>f("diagnosis",e.target.value)}/></div>
-            </div>
-          </div>
-          {/* VISTA UID link */}
-          <div style={{background:"#f5f3ff",borderRadius:12,padding:12,marginBottom:14,border:"1px solid #ddd6fe"}}>
-            <div style={{fontSize:11,fontWeight:700,color:"#6d28d9",marginBottom:6}}>🔗 Link to VISTA Assessment (Optional)</div>
-            <label style={LBL}>{t.vistaUID}</label>
-            <input style={INP} placeholder="e.g. ABCDEF123456 — enter if this person has taken CIBS-VISTA" value={subjInfo.vistaUID} onChange={e=>f("vistaUID",e.target.value)}/>
-            <div style={{fontSize:10,color:"#8b5cf6",marginTop:4}}>Entering the VISTA UID links both assessments in the research database for convergent validity analysis.</div>
-          </div>
-          <button onClick={()=>canProceed&&setScreen("assessment")} style={{display:"block",width:"100%",padding:"15px",borderRadius:14,background:canProceed?"linear-gradient(135deg,#3b1f6e,#6d28d9)":"#e2e8f0",color:canProceed?"white":"#9ca3af",border:"none",fontSize:14,fontWeight:700,cursor:canProceed?"pointer":"not-allowed"}}>
-            Begin Assessment →
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // Assessment
-  if (screen==="assessment") {
-    const progress = pct();
-    // Auto-advance to next domain when current domain is complete
-    // (except domain 4 - user must explicitly submit)
-    const domainJustCompleted = complete(domain) && domain < DOMAIN_META.length;
-
-    return (
-      <div style={rootStyle}>
-        {/* Sticky progress header */}
-        <div style={{background:"linear-gradient(135deg,#3b1f6e,#6d28d9)",padding:"14px 16px 12px",position:"sticky",top:0,zIndex:20,boxShadow:"0 2px 12px rgba(109,40,217,0.3)"}}>
-          <div style={{maxWidth:600,margin:"0 auto"}}>
-            {/* Title + percent */}
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-              <div style={{fontSize:13,fontWeight:800,color:"white",letterSpacing:"0.02em"}}>CIBS-VALID</div>
-              <div style={{fontSize:11,color:"#e9d5ff",fontWeight:600}}>{progress}% complete</div>
-            </div>
-            {/* Progress bar */}
-            <div style={{background:"rgba(255,255,255,0.15)",borderRadius:6,height:6,overflow:"hidden",marginBottom:12}}>
-              <div style={{width:`${progress}%`,height:"100%",background:"linear-gradient(90deg,#a78bfa,#7c3aed)",borderRadius:6,transition:"width 0.5s ease"}}/>
-            </div>
-            {/* Domain steps - visual only, no click navigation to prevent skipping */}
-            <div style={{display:"flex",gap:6}}>
-              {DOMAIN_META.map((m,i)=>(
-                <div key={m.id} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
-                  <div style={{
-                    width:32,height:32,borderRadius:"50%",
-                    display:"flex",alignItems:"center",justifyContent:"center",
-                    fontSize:14,fontWeight:700,
-                    background:complete(m.id)?"rgba(255,255,255,0.95)":domain===m.id?"rgba(255,255,255,0.25)":"rgba(255,255,255,0.08)",
-                    color:complete(m.id)?m.color:domain===m.id?"white":"rgba(255,255,255,0.4)",
-                    border:domain===m.id?"2px solid rgba(255,255,255,0.6)":"2px solid transparent",
-                    transition:"all 0.3s ease"
-                  }}>
-                    {complete(m.id)?"✓":m.icon}
-                  </div>
-                  <div style={{fontSize:8,color:domain===m.id?"white":"rgba(255,255,255,0.4)",fontWeight:domain===m.id?700:400,textAlign:"center",lineHeight:1.2}}>
-                    {m.name}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Main content */}
-        <div style={{maxWidth:600,margin:"0 auto",padding:"16px 12px 40px"}} ref={scrollRef}>
-
-          {/* Domain completed — auto-advances in 1.5s, no user action needed */}
-          {domainJustCompleted && (
-            <div style={{background:"linear-gradient(135deg,#f0fdf4,#dcfce7)",border:"2px solid #86efac",borderRadius:14,padding:"16px 18px",marginBottom:16,textAlign:"center"}}>
-              <div style={{fontSize:28,marginBottom:6}}>✅</div>
-              <div style={{fontSize:15,fontWeight:800,color:"#15803d",marginBottom:4}}>
-                {DOMAIN_META[domain-1].name} Complete!
-              </div>
-              <div style={{fontSize:12,color:"#16a34a",marginBottom:10}}>
-                Moving to {DOMAIN_META[domain].icon} {DOMAIN_META[domain].name}…
-              </div>
-              <div style={{height:4,background:"rgba(22,163,74,0.2)",borderRadius:4,overflow:"hidden"}}>
-                <div style={{height:"100%",background:"#16a34a",borderRadius:4,animation:"domain-progress 1.5s linear forwards"}}/>
-              </div>
-              <style>{`@keyframes domain-progress{from{width:0%}to{width:100%}}`}</style>
-            </div>
-          )}
-
-          {/* Domain label */}
-          <div style={{background:"white",borderRadius:12,padding:"12px 16px",marginBottom:14,boxShadow:"0 1px 8px rgba(0,0,0,0.05)",border:`2px solid ${cd.color}15`}}>
-            <div style={{fontSize:10,fontWeight:800,color:cd.color,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:2}}>{t.domainNames?.[domain-1]}</div>
-            <div style={{fontSize:11,color:"#94a3b8"}}>
-              {domain===1&&"Non-verbal cognitive ability · Adaptive test · Questions advance automatically"}
-              {domain===2&&"BFI-10 (Rammstedt & John, 2007) + PID-5-BF (APA, 2013) · 35 items"}
-              {domain===3&&"WHO-5 · PHQ-9 · GAD-7 · Rosenberg RSES · 31 items"}
-              {domain===4&&"C-SSRS (Columbia University) + AUDIT-C (WHO) · 8 items"}
-            </div>
-          </div>
-
-          {/* Domain content */}
-          {domain===1 && <DomainCognition set={(k,v)=>set(1,k,v)} color={cd.color} bg={cd.bg}/>}
-          {domain===2 && <DomainPersonalityFull resp={resp.d2} set={(k,v)=>set(2,k,v)} t={t}/>}
-          {domain===3 && <DomainHealthFull resp={resp.d3} set={(k,v)=>set(3,k,v)} t={t}/>}
-          {domain===4 && <DomainRiskFull resp={resp.d4} set={(k,v)=>set(4,k,v)} t={t}/>}
-
-          {/* SUBMIT button — only shows when ALL 4 domains are complete */}
-          {allDone && (
-            <div id="submit-block" style={{marginTop:24,background:"white",borderRadius:16,padding:"20px",border:"2px solid #6d28d9",boxShadow:"0 4px 20px rgba(109,40,217,0.15)"}}>
-              <div style={{textAlign:"center",marginBottom:16}}>
-                <div style={{fontSize:32,marginBottom:8}}>🎉</div>
-                <div style={{fontSize:16,fontWeight:800,color:"#3b1f6e",marginBottom:4}}>All sections complete!</div>
-                <div style={{fontSize:12,color:"#64748b",lineHeight:1.6}}>
-                  Tap the button below to score all 9 instruments and generate your personalised report.
-                </div>
-              </div>
-              {/* Domain completion checklist */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:16}}>
-                {DOMAIN_META.map(m=>(
-                  <div key={m.id} style={{background:"#f0fdf4",borderRadius:10,padding:"10px 12px",display:"flex",alignItems:"center",gap:8,border:"1px solid #86efac"}}>
-                    <span style={{fontSize:16}}>{m.icon}</span>
-                    <div>
-                      <div style={{fontSize:11,fontWeight:700,color:"#15803d"}}>{m.name}</div>
-                      <div style={{fontSize:9,color:"#16a34a"}}>✓ Complete</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <button onClick={completeAssessment}
-                style={{width:"100%",padding:"16px",borderRadius:12,background:"linear-gradient(135deg,#3b1f6e,#6d28d9)",color:"white",border:"none",fontSize:16,fontWeight:800,cursor:"pointer",boxShadow:"0 6px 20px rgba(109,40,217,0.4)",letterSpacing:"0.02em"}}>
-                ✅ Submit &amp; Generate My Report
-              </button>
-              <p style={{textAlign:"center",fontSize:10,color:"#9ca3af",marginTop:10}}>
-                Your responses are saved securely. Report generates instantly.
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // Generating
-  if (generating) return (
-    <div style={{minHeight:"100vh",background:"linear-gradient(160deg,#3b1f6e,#6d28d9)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
-      <div style={{textAlign:"center",maxWidth:380,padding:28}}>
-        <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}`}</style>
-        {/* Spinner */}
-        <div style={{width:64,height:64,border:"4px solid rgba(255,255,255,0.1)",borderTopColor:"#a78bfa",borderRadius:"50%",animation:"spin 1s linear infinite",margin:"0 auto 24px"}}/>
-        {/* Title */}
-        <h2 style={{fontSize:22,color:"white",fontWeight:900,marginBottom:8}}>Processing your responses…</h2>
-        <p style={{fontSize:13,color:"rgba(255,255,255,0.7)",marginBottom:24,lineHeight:1.6}}>
-          Please wait while we score all 9 instruments and prepare your personalised report.
-        </p>
-        {/* Progress steps */}
-        <div style={{background:"rgba(255,255,255,0.08)",borderRadius:12,padding:"14px 16px",textAlign:"left"}}>
-          {["Scoring cognitive ability (Ravens CAT)","Analysing Big Five personality (BFI-10)","Mapping DSM-5 clusters (PID-5-BF)","Calculating wellbeing scores (WHO-5)","Scoring depression & anxiety (PHQ-9, GAD-7)","Assessing self-esteem (RSES)","Evaluating risk indicators (C-SSRS, AUDIT-C)","Compiling your clinical report…"].map((step,i)=>(
-            <div key={i} style={{display:"flex",alignItems:"center",gap:10,marginBottom:i<7?8:0,animation:`pulse ${1+i*0.2}s ease infinite`,animationDelay:`${i*0.15}s`}}>
-              <div style={{width:6,height:6,borderRadius:"50%",background:"#a78bfa",flexShrink:0}}/>
-              <span style={{fontSize:11,color:"rgba(255,255,255,0.7)"}}>{step}</span>
-            </div>
-          ))}
-        </div>
-        <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",marginTop:16}}>Do not close this window · Usually takes 5–10 seconds</p>
-      </div>
-    </div>
-  );
-
-  // Report
-  if (screen==="report" && results) return (
-    <ValidReport results={results} subjInfo={subjInfo} t={t} onNew={reset}/>
-  );
-
-  return null;
-}
-
