@@ -8,7 +8,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 
 // ── GOOGLE SHEETS DATA PIPELINE ──────────────────────────────────────────────
 // Paste your deployed Apps Script Web App URL below after Step 4 of setup guide
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxEPRW6q0Ew1dbQfRzQBMQ1mHCWdnPFB6aqs9a7Mw_Pp8Zq0alwZIVQmw_VzB77LXfIsQ/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxFmt0azInyYV-4QzDl58q6DaYX9Wj3BKKbtmHI5G2xJjm69iYQkEndwN1mKI7vI64A8A/exec";
 
 // ─────────────── INSTRUMENT DATA ───────────────────────────────────────────
 
@@ -2105,30 +2105,14 @@ const Demographics = ({ onComplete, mode, lang }) => {
   });
   const set = (k,v) => setForm(p=>({...p,[k]:v}));
 
-  const ageFromDOB = calcAge(form.dob);
+  const ageFromDOB  = calcAge(form.dob);
   const fileNoFinal = form.fileNo.trim() || autoFileNo();
-  const uid = generateUID(form.mobile, form.dob, form.gender);
-  const canProceed = form.dob !== "" && form.gender !== "";
+  const uid         = generateUID(form.mobile, form.dob, form.gender);
+  const canProceed  = form.dob !== "" && form.gender !== "";
 
-  const Field = ({label, k, type="text", placeholder=""}) => (
-    <div>
-      <label className="block text-xs font-semibold text-gray-600 mb-1">{label}</label>
-      <input value={form[k]} onChange={e=>set(k,e.target.value)}
-        placeholder={placeholder} type={type}
-        max={type==="date" ? new Date().toISOString().split("T")[0] : undefined}
-        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-purple-500"/>
-    </div>
-  );
-  const Select = ({label, k, opts}) => (
-    <div>
-      <label className="block text-xs font-semibold text-gray-600 mb-1">{label}</label>
-      <select value={form[k]} onChange={e=>set(k,e.target.value)}
-        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-purple-500 bg-white">
-        <option value="">— —</option>
-        {opts.map(o=><option key={o} value={o}>{o}</option>)}
-      </select>
-    </div>
-  );
+  // Shared input / select styles — defined as plain style objects, not components
+  const INP = "w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-purple-500";
+  const LBL = "block text-xs font-semibold text-gray-600 mb-1";
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -2157,20 +2141,24 @@ const Demographics = ({ onComplete, mode, lang }) => {
           🔒 {t.privacyNote}
         </div>
 
-        <Field k="name" label={t.nameLabel} placeholder="Anonymous"/>
-
-        {/* DOB + age display */}
+        {/* Name */}
         <div>
-          <label className="block text-xs font-semibold text-gray-600 mb-1">{t.dobLabel}</label>
+          <label className={LBL}>{t.nameLabel}</label>
+          <input value={form.name} onChange={e=>set("name",e.target.value)}
+            placeholder="Anonymous" type="text" className={INP}/>
+        </div>
+
+        {/* DOB */}
+        <div>
+          <label className={LBL}>{t.dobLabel}</label>
           <input type="date" value={form.dob} onChange={e=>set("dob",e.target.value)}
-            max={new Date().toISOString().split("T")[0]}
-            className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-purple-500"/>
+            max={new Date().toISOString().split("T")[0]} className={INP}/>
           {ageFromDOB && <p className="text-xs text-purple-600 mt-1 font-bold">{t.ageStr}: {ageFromDOB} {t.yearsStr}</p>}
         </div>
 
         {/* Gender */}
         <div>
-          <label className="block text-xs font-semibold text-gray-600 mb-1">{t.genderLabel}</label>
+          <label className={LBL}>{t.genderLabel}</label>
           <div className="grid grid-cols-4 gap-1.5">
             {["Male","Female","Other","NSD"].map((g,i)=>(
               <button key={g} onClick={()=>set("gender",g)}
@@ -2182,13 +2170,60 @@ const Demographics = ({ onComplete, mode, lang }) => {
           </div>
         </div>
 
-        <Field k="mobile" label={t.mobileLabel} type="tel" placeholder="9876543210"/>
-        <Field k="email"  label={t.emailLabel}  type="email" placeholder="you@email.com"/>
-        <Select k="education" label={t.eduLabel} opts={t.edu}/>
-        <Field  k="occupation" label={t.occLabel} placeholder="e.g. Teacher, Farmer, Student"/>
-        <Select k="referral" label={t.refLabel} opts={t.ref}/>
-        <Field  k="assessor" label={t.assessorLabel} placeholder="Dr. Pangaonkar"/>
-        <Field  k="notes"    label={t.notesLabel}     placeholder="Brief note…"/>
+        {/* Mobile */}
+        <div>
+          <label className={LBL}>{t.mobileLabel}</label>
+          <input value={form.mobile} onChange={e=>set("mobile",e.target.value)}
+            placeholder="9876543210" type="tel" maxLength={10} className={INP}/>
+        </div>
+
+        {/* Email */}
+        <div>
+          <label className={LBL}>{t.emailLabel}</label>
+          <input value={form.email} onChange={e=>set("email",e.target.value)}
+            placeholder="you@email.com" type="email" className={INP}/>
+        </div>
+
+        {/* Education */}
+        <div>
+          <label className={LBL}>{t.eduLabel}</label>
+          <select value={form.education} onChange={e=>set("education",e.target.value)}
+            className={INP + " bg-white"}>
+            <option value="">— —</option>
+            {t.edu.map(o=><option key={o} value={o}>{o}</option>)}
+          </select>
+        </div>
+
+        {/* Occupation */}
+        <div>
+          <label className={LBL}>{t.occLabel}</label>
+          <input value={form.occupation} onChange={e=>set("occupation",e.target.value)}
+            placeholder="e.g. Teacher, Farmer, Student" type="text" className={INP}/>
+        </div>
+
+        {/* Referral */}
+        <div>
+          <label className={LBL}>{t.refLabel}</label>
+          <select value={form.referral} onChange={e=>set("referral",e.target.value)}
+            className={INP + " bg-white"}>
+            <option value="">— —</option>
+            {t.ref.map(o=><option key={o} value={o}>{o}</option>)}
+          </select>
+        </div>
+
+        {/* Assessor */}
+        <div>
+          <label className={LBL}>{t.assessorLabel}</label>
+          <input value={form.assessor} onChange={e=>set("assessor",e.target.value)}
+            placeholder="Dr. Pangaonkar" type="text" className={INP}/>
+        </div>
+
+        {/* Notes */}
+        <div>
+          <label className={LBL}>{t.notesLabel}</label>
+          <input value={form.notes} onChange={e=>set("notes",e.target.value)}
+            placeholder="Brief note…" type="text" className={INP}/>
+        </div>
 
         {/* UID preview */}
         {canProceed && (
