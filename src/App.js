@@ -8,7 +8,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 
 // ── GOOGLE SHEETS DATA PIPELINE ──────────────────────────────────────────────
 // Paste your deployed Apps Script Web App URL below after Step 4 of setup guide
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxFmt0azInyYV-4QzDl58q6DaYX9Wj3BKKbtmHI5G2xJjm69iYQkEndwN1mKI7vI64A8A/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxYw3DNfteGUApE97zpPScPgVCrHjNXTU-kuwabwQNviLmsaW4gSEd6hqY1FoTJsxu4HQ/exec";
 
 // ─────────────── INSTRUMENT DATA ───────────────────────────────────────────
 
